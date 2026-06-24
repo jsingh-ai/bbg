@@ -14,11 +14,13 @@ interface SectionPanelProps {
 function ValueRows({
   machineId,
   values,
-  visible
+  visible,
+  className
 }: {
   machineId: number;
   values: LiveValue[];
   visible: boolean;
+  className?: string;
 }) {
   const queryClient = useQueryClient();
   const toggleMutation = useMutation({
@@ -30,7 +32,7 @@ function ValueRows({
   });
 
   return (
-    <div className="value-table-wrap">
+    <div className={className ? `value-table-wrap ${className}` : 'value-table-wrap'}>
       <table className="value-table">
         <thead>
           <tr>
@@ -108,7 +110,7 @@ function SectionPanel({ machineId, sectionKey, refreshMs, onNumericValuesChange 
       )}
 
       <h3 className="subheading">Shown Variables</h3>
-      <ValueRows machineId={machineId} values={shown} visible />
+      <ValueRows machineId={machineId} values={shown} visible className="section-values-scroll" />
 
       <details className="hidden-vars">
         <summary>Hidden Variables ({hidden.length})</summary>

@@ -220,16 +220,15 @@ p { color: var(--muted); margin-bottom: 0; }
 .dashboard-grid {
   display: grid;
   grid-template-columns: minmax(460px, 1.75fr) minmax(340px, 0.85fr);
-  grid-template-areas:
-    "map section"
-    "history alerts";
   gap: 16px;
   align-items: start;
 }
-.machine-map-card { grid-area: map; }
-.section-panel { grid-area: section; }
-.alerts-panel { grid-area: alerts; }
-.history-panel { grid-area: history; }
+.dashboard-main-column, .dashboard-side-column {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
 
 .machine-image-wrap, .layout-image-wrap {
   position: relative;
@@ -293,6 +292,10 @@ p { color: var(--muted); margin-bottom: 0; }
 .dot.neutral { background: var(--neutral); }
 
 .section-panel { padding-bottom: 14px; }
+.section-values-scroll {
+  max-height: 360px;
+  overflow: auto;
+}
 .section-photo {
   width: calc(100% - 32px);
   max-height: 240px;
@@ -427,11 +430,6 @@ p { color: var(--muted); margin-bottom: 0; }
 @media (max-width: 1380px) {
   .dashboard-grid {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-areas:
-      "map"
-      "section"
-      "history"
-      "alerts";
   }
   .layout-editor-grid { grid-template-columns: 280px minmax(0, 1fr); }
   .section-editor { grid-column: 1 / -1; }

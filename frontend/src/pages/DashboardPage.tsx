@@ -89,15 +89,19 @@ function DashboardPage({ machineId, refreshSeconds }: DashboardPageProps) {
       {dashboardQuery.isError && <div className="error-banner">{(dashboardQuery.error as Error).message}</div>}
 
       <div className="dashboard-grid">
-        <MachineMap machine={machine} sections={sections} selectedSectionKey={selectedSectionKey} onSelect={handleSelectSection} />
-        <SectionPanel
-          machineId={machineId}
-          sectionKey={selectedSectionKey}
-          refreshMs={refreshMs}
-          onNumericValuesChange={setNumericValues}
-        />
-        <AlertPanel machineId={machineId} alerts={alerts} onSelectSection={handleSelectSection} />
-        <HistoryChart machineId={machineId} sectionKey={selectedSectionKey} numericValues={numericValues} />
+        <div className="dashboard-main-column">
+          <MachineMap machine={machine} sections={sections} selectedSectionKey={selectedSectionKey} onSelect={handleSelectSection} />
+          <HistoryChart machineId={machineId} sectionKey={selectedSectionKey} numericValues={numericValues} />
+        </div>
+        <div className="dashboard-side-column">
+          <SectionPanel
+            machineId={machineId}
+            sectionKey={selectedSectionKey}
+            refreshMs={refreshMs}
+            onNumericValuesChange={setNumericValues}
+          />
+          <AlertPanel machineId={machineId} alerts={alerts} onSelectSection={handleSelectSection} />
+        </div>
       </div>
     </div>
   );
