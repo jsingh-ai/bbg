@@ -1,0 +1,14 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+frontend/node_modules/
+frontend/dist/
+*.log
+
+# Ignore image files
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.gif
