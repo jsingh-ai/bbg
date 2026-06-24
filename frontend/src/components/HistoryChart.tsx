@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api/client';
 import type { LiveValue } from '../types';
 
+const CHART_COLORS = ['#38bdf8', '#22c55e', '#f59e0b', '#f97316', '#ef4444', '#a78bfa', '#14b8a6', '#f43f5e'];
+
 interface HistoryChartProps {
   machineId: number;
   sectionKey: string | null;
@@ -62,30 +64,76 @@ function HistoryChart({ machineId, sectionKey, numericValues }: HistoryChartProp
     }
     const chart = chartInstance.current;
     const data = historyQuery.data?.series ?? [];
+    if (historyQuery.isFetching) {
+      chart.showLoading('default', {
+        text: 'Loading trends...',
+        color: '#38bdf8',
+        textColor: '#cbd5e1',
+        maskColor: 'rgba(15, 23, 42, 0.45)'
+      });
+    } else {
+      chart.hideLoading();
+    }
     chart.setOption({
       animation: false,
-      tooltip: { trigger: 'axis' },
-      legend: { top: 0, type: 'scroll' },
-      grid: { left: 48, right: 24, top: 48, bottom: 46 },
-      xAxis: { type: 'time' },
-      yAxis: { type: 'value', scale: true },
+      color: CHART_COLORS,
+      backgroundColor: 'transparent',
+      tooltip: {
+        trigger: 'axis',
+        backgroundColor: 'rgba(15, 23, 42, 0.94)',
+        borderColor: 'rgba(148, 163, 184, 0.25)',
+        textStyle: { color: '#e5eefb' }
+      },
+      legend: {
+        top: 0,
+        type: 'scroll',
+        textStyle: { color: '#cbd5e1' },
+        inactiveColor: '#64748b',
+        pageTextStyle: { color: '#cbd5e1' }
+      },
+      grid: { left: 56, right: 24, top: 56, bottom: 46 },
+      xAxis: {
+        type: 'time',
+        axisLine: { lineStyle: { color: 'rgba(148, 163, 184, 0.35)' } },
+        splitLine: { lineStyle: { color: 'rgba(148, 163, 184, 0.10)' } },
+        axisLabel: { color: '#94a3b8' }
+      },
+      yAxis: {
+        type: 'value',
+        scale: true,
+        axisLine: { lineStyle: { color: 'rgba(148, 163, 184, 0.35)' } },
+        splitLine: { lineStyle: { color: 'rgba(148, 163, 184, 0.10)' } },
+        axisLabel: { color: '#94a3b8' }
+      },
       dataZoom: [
         { type: 'inside' },
-        { type: 'slider', height: 18, bottom: 8 }
+        {
+          type: 'slider',
+          height: 18,
+          bottom: 8,
+          borderColor: 'rgba(148, 163, 184, 0.22)',
+          backgroundColor: 'rgba(15, 23, 42, 0.55)',
+          fillerColor: 'rgba(56, 189, 248, 0.18)',
+          moveHandleStyle: { color: '#38bdf8' },
+          textStyle: { color: '#94a3b8' }
+        }
       ],
       series: data.map((series) => ({
         name: series.label,
         type: 'line',
         showSymbol: false,
         connectNulls: false,
+        smooth: true,
+        lineStyle: { width: 2.5 },
+        emphasis: { focus: 'series' },
         data: series.points
       }))
-    });
+    }, { notMerge: true });
     const resize = () => chart.resize();
     window.addEventListener('resize', resize);
     resize();
     return () => window.removeEventListener('resize', resize);
-  }, [historyQuery.data]);
+  }, [historyQuery.data, historyQuery.isFetching]);
 
   useEffect(() => {
     return () => {
