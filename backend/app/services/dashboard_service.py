@@ -9,18 +9,9 @@ from fastapi import HTTPException
 from ..config import get_settings
 from ..db import pool
 from .photo_service import safe_photo_url, static_url
-from .section_parser import display_name, extract_sort_number, is_numeric_data_type
+from .section_parser import display_name, is_numeric_data_type
 from .sync_service import sync_machine
 from .value_format import formatted_value, row_json_safe, rows_json_safe
-
-
-def _section_sort_key(item: dict[str, Any]) -> tuple[int, int, str]:
-    display_label = str(item.get("display_label") or "")
-    section_key = str(item.get("section_key") or "")
-    parsed = extract_sort_number(display_label)
-    if parsed is None:
-        parsed = extract_sort_number(section_key)
-    return (0 if parsed is not None else 1, parsed if parsed is not None else 0, (display_label or section_key).lower())
 
 
 def get_machine(machine_id: int) -> dict[str, Any]:
@@ -184,7 +175,7 @@ def get_sections(machine_id: int, include_hidden: bool = True, sync: bool = True
         item["current_alert_count"] = alert_counts["current_alert_count"]
         item["status"] = status
         result.append(item)
-    return sorted(result, key=_section_sort_key)
+    return result
 
 
 def update_section(section_id: int, data: dict[str, Any]) -> dict[str, Any]:
@@ -198,6 +189,28 @@ def update_section(section_id: int, data: dict[str, Any]) -> dict[str, Any]:
         "box_w_pct",
         "box_h_pct",
     }
+    current_row = pool.fetch_one("SELECT * FROM opc_machine_sections WHERE section_id = %s", (section_id,))
+    if not current_row:
+        raise HTTPException(status_code=404, detail="Section not found")
+
+    if "display_label" in data and data["display_label"] is not None:
+        label = str(data["display_label"]).strip()
+        if label:
+            duplicate = pool.fetch_one(
+                """
+                SELECT section_id
+                FROM opc_machine_sections
+                WHERE machine_id = %s
+                  AND section_id <> %s
+                  AND COALESCE(NULLIF(display_label, ''), section_key) = %s
+                LIMIT 1
+                """,
+                (current_row["machine_id"], section_id, label),
+            )
+            if duplicate:
+                raise HTTPException(status_code=400, detail=f'Display label "{label}" is already used by another section')
+            data["display_label"] = label
+
     sets: list[str] = []
     params: list[Any] = []
     for key, value in data.items():
@@ -205,10 +218,7 @@ def update_section(section_id: int, data: dict[str, Any]) -> dict[str, Any]:
             sets.append(f"{key} = %s")
             params.append(value)
     if not sets:
-        row = pool.fetch_one("SELECT * FROM opc_machine_sections WHERE section_id = %s", (section_id,))
-        if not row:
-            raise HTTPException(status_code=404, detail="Section not found")
-        return row_json_safe(row)
+        return row_json_safe(current_row)
     params.append(section_id)
     changed = pool.execute(f"UPDATE opc_machine_sections SET {', '.join(sets)} WHERE section_id = %s", tuple(params))
     row = pool.fetch_one("SELECT * FROM opc_machine_sections WHERE section_id = %s", (section_id,))

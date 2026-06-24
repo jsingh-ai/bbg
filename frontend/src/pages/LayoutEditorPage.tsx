@@ -27,6 +27,9 @@ function LayoutEditorPage({ machineId }: LayoutEditorPageProps) {
   const [drawStart, setDrawStart] = useState<{ x: number; y: number } | null>(null);
   const [draftBox, setDraftBox] = useState<DraftBox | null>(null);
   const [savedBox, setSavedBox] = useState<DraftBox | null>(null);
+  const [displayLabelDraft, setDisplayLabelDraft] = useState('');
+  const [sectionPhotoPathDraft, setSectionPhotoPathDraft] = useState('');
+  const [formError, setFormError] = useState<string | null>(null);
 
   const machineQuery = useQuery({ queryKey: ['machine', machineId], queryFn: () => api.getMachine(machineId) });
   const sectionsQuery = useQuery({ queryKey: ['sections', machineId], queryFn: () => api.getSections(machineId, true) });
@@ -37,8 +40,12 @@ function LayoutEditorPage({ machineId }: LayoutEditorPageProps) {
   const updateSection = useMutation({
     mutationFn: ({ sectionId, payload }: { sectionId: number; payload: Partial<Section> }) => api.updateSection(sectionId, payload),
     onSuccess: () => {
+      setFormError(null);
       queryClient.invalidateQueries({ queryKey: ['sections', machineId] });
       queryClient.invalidateQueries({ queryKey: ['dashboard', machineId] });
+    },
+    onError: (error: Error) => {
+      setFormError(error.message);
     }
   });
 
@@ -72,6 +79,9 @@ function LayoutEditorPage({ machineId }: LayoutEditorPageProps) {
         : null;
     setDraftBox(nextBox);
     setSavedBox(nextBox);
+    setDisplayLabelDraft(selectedSection.display_label ?? '');
+    setSectionPhotoPathDraft(selectedSection.section_photo_path ?? '');
+    setFormError(null);
   }, [selectedSection]);
 
   function getPct(event: MouseEvent<HTMLDivElement>) {
@@ -126,6 +136,22 @@ function LayoutEditorPage({ machineId }: LayoutEditorPageProps) {
 
   function saveSelectedField(payload: Partial<Section>) {
     if (!selectedSection) return;
+    if (payload.display_label !== undefined) {
+      const nextLabel = String(payload.display_label ?? '').trim();
+      if (nextLabel) {
+        const duplicate = sections.some(
+          (section) =>
+            section.section_id !== selectedSection.section_id &&
+            section.display_label.trim().toLowerCase() === nextLabel.toLowerCase()
+        );
+        if (duplicate) {
+          setFormError(`Display label "${nextLabel}" is already used by another section`);
+          return;
+        }
+      }
+      payload = { ...payload, display_label: nextLabel };
+    }
+    setFormError(null);
     updateSection.mutate({ sectionId: selectedSection.section_id, payload });
   }
 
@@ -223,19 +249,22 @@ function LayoutEditorPage({ machineId }: LayoutEditorPageProps) {
           <h2>Selected Section</h2>
           {selectedSection ? (
             <div className="form-stack">
+              {formError && <div className="error-banner">{formError}</div>}
               <label>
                 Display Label
                 <input
-                  defaultValue={selectedSection.display_label}
-                  onBlur={(event) => saveSelectedField({ display_label: event.target.value })}
+                  value={displayLabelDraft}
+                  onChange={(event) => setDisplayLabelDraft(event.target.value)}
+                  onBlur={() => saveSelectedField({ display_label: displayLabelDraft })}
                 />
               </label>
               <label>
                 Section Photo Path
                 <input
-                  defaultValue={selectedSection.section_photo_path ?? ''}
+                  value={sectionPhotoPathDraft}
                   placeholder="opc_photos/020 - Unwinder.jpeg"
-                  onBlur={(event) => saveSelectedField({ section_photo_path: event.target.value || null })}
+                  onChange={(event) => setSectionPhotoPathDraft(event.target.value)}
+                  onBlur={() => saveSelectedField({ section_photo_path: sectionPhotoPathDraft || null })}
                 />
               </label>
               <div className="box-input-grid">
