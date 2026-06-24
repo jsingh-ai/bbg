@@ -9,9 +9,18 @@ from fastapi import HTTPException
 from ..config import get_settings
 from ..db import pool
 from .photo_service import safe_photo_url, static_url
-from .section_parser import display_name, is_numeric_data_type
+from .section_parser import display_name, extract_sort_number, is_numeric_data_type
 from .sync_service import sync_machine
 from .value_format import formatted_value, row_json_safe, rows_json_safe
+
+
+def _section_sort_key(item: dict[str, Any]) -> tuple[int, int, str]:
+    display_label = str(item.get("display_label") or "")
+    section_key = str(item.get("section_key") or "")
+    parsed = extract_sort_number(display_label)
+    if parsed is None:
+        parsed = extract_sort_number(section_key)
+    return (0 if parsed is not None else 1, parsed if parsed is not None else 0, (display_label or section_key).lower())
 
 
 def get_machine(machine_id: int) -> dict[str, Any]:
@@ -175,7 +184,7 @@ def get_sections(machine_id: int, include_hidden: bool = True, sync: bool = True
         item["current_alert_count"] = alert_counts["current_alert_count"]
         item["status"] = status
         result.append(item)
-    return result
+    return sorted(result, key=_section_sort_key)
 
 
 def update_section(section_id: int, data: dict[str, Any]) -> dict[str, Any]:

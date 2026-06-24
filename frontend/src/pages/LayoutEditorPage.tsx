@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Save, RefreshCcw } from 'lucide-react';
-import { MouseEvent, useMemo, useRef, useState } from 'react';
+import { MouseEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api/client';
 import type { Section } from '../types';
 
@@ -26,6 +26,7 @@ function LayoutEditorPage({ machineId }: LayoutEditorPageProps) {
   const [drawing, setDrawing] = useState(false);
   const [drawStart, setDrawStart] = useState<{ x: number; y: number } | null>(null);
   const [draftBox, setDraftBox] = useState<DraftBox | null>(null);
+  const [savedBox, setSavedBox] = useState<DraftBox | null>(null);
 
   const machineQuery = useQuery({ queryKey: ['machine', machineId], queryFn: () => api.getMachine(machineId) });
   const sectionsQuery = useQuery({ queryKey: ['sections', machineId], queryFn: () => api.getSections(machineId, true) });
@@ -46,6 +47,32 @@ function LayoutEditorPage({ machineId }: LayoutEditorPageProps) {
     () => sections.find((section) => section.section_id === selectedSectionId) ?? sections[0],
     [sections, selectedSectionId]
   );
+
+  useEffect(() => {
+    if (!selectedSection) {
+      setDraftBox(null);
+      setSavedBox(null);
+      return;
+    }
+    const nextBox =
+      selectedSection.box_x_pct !== null &&
+      selectedSection.box_x_pct !== undefined &&
+      selectedSection.box_y_pct !== null &&
+      selectedSection.box_y_pct !== undefined &&
+      selectedSection.box_w_pct !== null &&
+      selectedSection.box_w_pct !== undefined &&
+      selectedSection.box_h_pct !== null &&
+      selectedSection.box_h_pct !== undefined
+        ? {
+            x: Number(selectedSection.box_x_pct),
+            y: Number(selectedSection.box_y_pct),
+            w: Number(selectedSection.box_w_pct),
+            h: Number(selectedSection.box_h_pct)
+          }
+        : null;
+    setDraftBox(nextBox);
+    setSavedBox(nextBox);
+  }, [selectedSection]);
 
   function getPct(event: MouseEvent<HTMLDivElement>) {
     const rect = imageWrapRef.current?.getBoundingClientRect();
@@ -75,20 +102,26 @@ function LayoutEditorPage({ machineId }: LayoutEditorPageProps) {
 
   function stopDrawing() {
     if (!drawing || !draftBox || !selectedSection) return;
-    if (draftBox.w >= 1 && draftBox.h >= 1) {
-      updateSection.mutate({
-        sectionId: selectedSection.section_id,
-        payload: {
-          box_x_pct: draftBox.x,
-          box_y_pct: draftBox.y,
-          box_w_pct: draftBox.w,
-          box_h_pct: draftBox.h,
-          is_visible: true
-        }
-      });
+    if (draftBox.w < 1 || draftBox.h < 1) {
+      setDraftBox(savedBox);
     }
     setDrawing(false);
     setDrawStart(null);
+  }
+
+  function saveDraftBox() {
+    if (!selectedSection || !draftBox) return;
+    updateSection.mutate({
+      sectionId: selectedSection.section_id,
+      payload: {
+        box_x_pct: draftBox.x,
+        box_y_pct: draftBox.y,
+        box_w_pct: draftBox.w,
+        box_h_pct: draftBox.h,
+        is_visible: true
+      }
+    });
+    setSavedBox(draftBox);
   }
 
   function saveSelectedField(payload: Partial<Section>) {
@@ -119,7 +152,7 @@ function LayoutEditorPage({ machineId }: LayoutEditorPageProps) {
                 onClick={() => setSelectedSectionId(section.section_id)}
               >
                 <span>{section.display_label}</span>
-                <small>{section.has_box ? 'Mapped' : 'No box'} | {Boolean(section.is_visible) ? 'Visible' : 'Hidden'}</small>
+                <small>{section.has_box ? 'Mapped' : 'No box'}</small>
               </button>
             ))}
           </div>
@@ -148,15 +181,25 @@ function LayoutEditorPage({ machineId }: LayoutEditorPageProps) {
             ) : (
               <div className="image-placeholder">No main image configured in opc_machines.main_image_path.</div>
             )}
-            {sections.filter((section) => Boolean(section.is_visible) && section.has_box).map((section) => (
+            {sections.filter((section) => Boolean(section.is_visible) && section.has_box).map((section) => {
+              const box =
+                selectedSection?.section_id === section.section_id && draftBox
+                  ? draftBox
+                  : {
+                      x: Number(section.box_x_pct ?? 0),
+                      y: Number(section.box_y_pct ?? 0),
+                      w: Number(section.box_w_pct ?? 0),
+                      h: Number(section.box_h_pct ?? 0)
+                    };
+              return (
               <button
                 key={section.section_id}
                 className={`map-box layout-box ${selectedSection?.section_id === section.section_id ? 'selected' : ''}`}
                 style={{
-                  left: `${section.box_x_pct ?? 0}%`,
-                  top: `${section.box_y_pct ?? 0}%`,
-                  width: `${section.box_w_pct ?? 0}%`,
-                  height: `${section.box_h_pct ?? 0}%`
+                  left: `${box.x}%`,
+                  top: `${box.y}%`,
+                  width: `${box.w}%`,
+                  height: `${box.h}%`
                 }}
                 onClick={(event) => {
                   event.stopPropagation();
@@ -165,8 +208,9 @@ function LayoutEditorPage({ machineId }: LayoutEditorPageProps) {
               >
                 <span>{section.display_label}</span>
               </button>
-            ))}
-            {draftBox && (
+              );
+            })}
+            {selectedSection && !selectedSection.has_box && draftBox && (
               <div
                 className="draft-box"
                 style={{ left: `${draftBox.x}%`, top: `${draftBox.y}%`, width: `${draftBox.w}%`, height: `${draftBox.h}%` }}
@@ -186,22 +230,6 @@ function LayoutEditorPage({ machineId }: LayoutEditorPageProps) {
                   onBlur={(event) => saveSelectedField({ display_label: event.target.value })}
                 />
               </label>
-              <label className="check-row strong">
-                <input
-                  type="checkbox"
-                  checked={Boolean(selectedSection.is_visible)}
-                  onChange={(event) => saveSelectedField({ is_visible: event.target.checked })}
-                />
-                Show this section on dashboard
-              </label>
-              <label>
-                Sort Order
-                <input
-                  type="number"
-                  defaultValue={selectedSection.sort_order}
-                  onBlur={(event) => saveSelectedField({ sort_order: Number(event.target.value) })}
-                />
-              </label>
               <label>
                 Section Photo Path
                 <input
@@ -211,12 +239,12 @@ function LayoutEditorPage({ machineId }: LayoutEditorPageProps) {
                 />
               </label>
               <div className="box-input-grid">
-                <label>X %<input type="number" value={selectedSection.box_x_pct ?? ''} onChange={(event) => saveSelectedField({ box_x_pct: event.target.value === '' ? null : Number(event.target.value) })} /></label>
-                <label>Y %<input type="number" value={selectedSection.box_y_pct ?? ''} onChange={(event) => saveSelectedField({ box_y_pct: event.target.value === '' ? null : Number(event.target.value) })} /></label>
-                <label>W %<input type="number" value={selectedSection.box_w_pct ?? ''} onChange={(event) => saveSelectedField({ box_w_pct: event.target.value === '' ? null : Number(event.target.value) })} /></label>
-                <label>H %<input type="number" value={selectedSection.box_h_pct ?? ''} onChange={(event) => saveSelectedField({ box_h_pct: event.target.value === '' ? null : Number(event.target.value) })} /></label>
+                <label>X %<input type="number" value={draftBox?.x ?? ''} onChange={(event) => setDraftBox((prev) => ({ x: event.target.value === '' ? 0 : Number(event.target.value), y: prev?.y ?? 0, w: prev?.w ?? 0, h: prev?.h ?? 0 }))} /></label>
+                <label>Y %<input type="number" value={draftBox?.y ?? ''} onChange={(event) => setDraftBox((prev) => ({ x: prev?.x ?? 0, y: event.target.value === '' ? 0 : Number(event.target.value), w: prev?.w ?? 0, h: prev?.h ?? 0 }))} /></label>
+                <label>W %<input type="number" value={draftBox?.w ?? ''} onChange={(event) => setDraftBox((prev) => ({ x: prev?.x ?? 0, y: prev?.y ?? 0, w: event.target.value === '' ? 0 : Number(event.target.value), h: prev?.h ?? 0 }))} /></label>
+                <label>H %<input type="number" value={draftBox?.h ?? ''} onChange={(event) => setDraftBox((prev) => ({ x: prev?.x ?? 0, y: prev?.y ?? 0, w: prev?.w ?? 0, h: event.target.value === '' ? 0 : Number(event.target.value) }))} /></label>
               </div>
-              <button className="primary-button" onClick={() => selectedSection && saveSelectedField({})}><Save size={16} /> Saved Automatically</button>
+              <button className="primary-button" disabled={!draftBox || updateSection.isPending} onClick={saveDraftBox}><Save size={16} /> Save Box</button>
             </div>
           ) : (
             <div className="empty-state">No sections found. Confirm opc_tags has active rows for this machine.</div>

@@ -44,6 +44,15 @@ def normalize_key(value: str | None) -> str:
     return value
 
 
+def extract_sort_number(value: str | None) -> int | None:
+    if not value:
+        return None
+    match = re.match(r"^\s*(\d+)", value)
+    if not match:
+        return None
+    return int(match.group(1))
+
+
 def is_numeric_data_type(data_type: str | None) -> bool:
     if not data_type:
         return False

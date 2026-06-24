@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from ..db import pool
 from .photo_service import find_section_photo
-from .section_parser import parse_section_key
+from .section_parser import extract_sort_number, parse_section_key
 
 
 def sync_sections(machine_id: int) -> int:
@@ -24,7 +24,8 @@ def sync_sections(machine_id: int) -> int:
             continue
         seen.add(section_key)
         photo_path = find_section_photo(section_key)
-        params.append((machine_id, section_key, section_key, photo_path, sort_order))
+        parsed_sort = extract_sort_number(section_key)
+        params.append((machine_id, section_key, section_key, photo_path, parsed_sort if parsed_sort is not None else sort_order))
         sort_order += 10
 
     return pool.execute_many(
