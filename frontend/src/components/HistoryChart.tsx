@@ -16,8 +16,8 @@ function toLocalInputValue(date: Date) {
   return local.toISOString().slice(0, 16);
 }
 
-function inputToIso(value: string) {
-  return new Date(value).toISOString().slice(0, 19);
+function inputToQueryDateTime(value: string) {
+  return value.length === 16 ? `${value}:00` : value;
 }
 
 function defaultRange() {
@@ -33,8 +33,9 @@ function HistoryChart({ machineId, sectionKey, numericValues }: HistoryChartProp
   const [selectedTagIds, setSelectedTagIds] = useState<number[]>([]);
 
   useEffect(() => {
-    const defaultIds = numericValues
-      .filter((row) => Boolean(row.show_in_history_default))
+    const preferred = numericValues.filter((row) => Boolean(row.show_in_history_default));
+    const source = preferred.length ? preferred : numericValues;
+    const defaultIds = source
       .slice(0, 8)
       .map((row) => row.tag_id);
     setSelectedTagIds(defaultIds);
@@ -44,10 +45,15 @@ function HistoryChart({ machineId, sectionKey, numericValues }: HistoryChartProp
 
   const historyQuery = useQuery({
     queryKey: ['history', machineId, sectionKey, range.start, range.end, tagIds.join(',')],
-    queryFn: () => api.getHistory(machineId, sectionKey as string, inputToIso(range.start), inputToIso(range.end), tagIds),
+    queryFn: () => api.getHistory(machineId, sectionKey as string, inputToQueryDateTime(range.start), inputToQueryDateTime(range.end), tagIds),
     enabled: Boolean(sectionKey && tagIds.length),
     staleTime: 10_000
   });
+
+  const hasSeriesData = useMemo(
+    () => (historyQuery.data?.series ?? []).some((series) => series.points.length > 0),
+    [historyQuery.data]
+  );
 
   useEffect(() => {
     if (!chartRef.current) return;
@@ -151,6 +157,9 @@ function HistoryChart({ machineId, sectionKey, numericValues }: HistoryChartProp
         <div className="chart-stage">
           {historyQuery.isError && <div className="chart-message">{(historyQuery.error as Error).message}</div>}
           {!selectedTagIds.length && <div className="chart-message">Select one or more variables to chart.</div>}
+          {!historyQuery.isError && selectedTagIds.length > 0 && historyQuery.data && !hasSeriesData && (
+            <div className="chart-message">No history data found for the selected variables and time range.</div>
+          )}
           <div ref={chartRef} className="echart" />
         </div>
       </div>
