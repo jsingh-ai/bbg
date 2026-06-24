@@ -52,9 +52,14 @@ function HistoryChart({ machineId, sectionKey, numericValues }: HistoryChartProp
     staleTime: 10_000
   });
 
+  const activeSeries = useMemo(
+    () => (historyQuery.data?.series ?? []).filter((series) => selectedTagIds.includes(series.tag_id)),
+    [historyQuery.data, selectedTagIds]
+  );
+
   const hasSeriesData = useMemo(
-    () => (historyQuery.data?.series ?? []).some((series) => series.points.length > 0),
-    [historyQuery.data]
+    () => activeSeries.some((series) => series.points.length > 0),
+    [activeSeries]
   );
 
   useEffect(() => {
@@ -63,7 +68,7 @@ function HistoryChart({ machineId, sectionKey, numericValues }: HistoryChartProp
       chartInstance.current = echarts.init(chartRef.current);
     }
     const chart = chartInstance.current;
-    const data = historyQuery.data?.series ?? [];
+    const data = activeSeries;
     if (historyQuery.isFetching) {
       chart.showLoading('default', {
         text: 'Loading trends...',
@@ -74,6 +79,11 @@ function HistoryChart({ machineId, sectionKey, numericValues }: HistoryChartProp
     } else {
       chart.hideLoading();
     }
+    if (!selectedTagIds.length) {
+      chart.clear();
+      return;
+    }
+    chart.clear();
     chart.setOption({
       animation: false,
       color: CHART_COLORS,
@@ -87,6 +97,8 @@ function HistoryChart({ machineId, sectionKey, numericValues }: HistoryChartProp
       legend: {
         top: 0,
         type: 'scroll',
+        data: data.map((series) => series.label),
+        selected: Object.fromEntries(data.map((series) => [series.label, true])),
         textStyle: { color: '#cbd5e1' },
         inactiveColor: '#64748b',
         pageTextStyle: { color: '#cbd5e1' }
@@ -133,7 +145,7 @@ function HistoryChart({ machineId, sectionKey, numericValues }: HistoryChartProp
     window.addEventListener('resize', resize);
     resize();
     return () => window.removeEventListener('resize', resize);
-  }, [historyQuery.data, historyQuery.isFetching]);
+  }, [activeSeries, historyQuery.isFetching, selectedTagIds]);
 
   useEffect(() => {
     return () => {
