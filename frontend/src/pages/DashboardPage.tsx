@@ -5,7 +5,7 @@ import { api } from '../api/client';
 import AlertPanel from '../components/AlertPanel';
 import AssistantPanel from '../components/AssistantPanel';
 import DashboardSummary from '../components/DashboardSummary';
-import HistoryChart from '../components/HistoryChart';
+import HistoryChart, { SavedVariablesChart } from '../components/HistoryChart';
 import MachineMap from '../components/MachineMap';
 import RecipeSelector from '../components/RecipeSelector';
 import SectionPanel from '../components/SectionPanel';
@@ -133,7 +133,7 @@ function DashboardPage({ machineId, refreshSeconds, assistantEnabled }: Dashboar
             onSelect={handleSelectSection}
           />
         </div>
-        <div className="dashboard-middle-row">
+        <div className="dashboard-live-history-row">
           <SectionPanel
             machineId={machineId}
             sectionKey={selectedSectionKey}
@@ -142,18 +142,26 @@ function DashboardPage({ machineId, refreshSeconds, assistantEnabled }: Dashboar
             onSaveVariable={handleSaveVariable}
             savedVariableIds={savedVariables.map((item) => item.tag_id)}
           />
-          <AlertPanel machineId={machineId} alerts={alerts} onSelectSection={handleSelectSection} />
-        </div>
-        <div className="dashboard-history-row">
           <HistoryChart
             machineId={machineId}
             sectionKey={selectedSectionKey}
             numericValues={numericValues}
             refreshMs={refreshMs}
-            savedVariables={savedVariables}
-            onRemoveSavedVariable={handleRemoveSavedVariable}
-            onClearSavedVariables={handleClearSavedVariables}
           />
+        </div>
+        {savedVariables.length > 0 && (
+          <div className="dashboard-saved-history-row">
+            <SavedVariablesChart
+              machineId={machineId}
+              refreshMs={refreshMs}
+              savedVariables={savedVariables}
+              onRemoveSavedVariable={handleRemoveSavedVariable}
+              onClearSavedVariables={handleClearSavedVariables}
+            />
+          </div>
+        )}
+        <div className="dashboard-alerts-row">
+          <AlertPanel machineId={machineId} alerts={alerts} onSelectSection={handleSelectSection} />
         </div>
       </div>
     </div>
