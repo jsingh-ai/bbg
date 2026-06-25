@@ -85,7 +85,7 @@ function Sparkline({
   }, []);
 
   if (!hasPoints) {
-    return <div className={className ? `summary-sparkline summary-sparkline-empty ${className}` : 'summary-sparkline summary-sparkline-empty'}>No last-hour trend data</div>;
+    return <div className={className ? `summary-sparkline summary-sparkline-empty ${className}` : 'summary-sparkline summary-sparkline-empty'}>No recent trend data</div>;
   }
 
   return <div ref={ref} className={className ? `summary-sparkline ${className}` : 'summary-sparkline'} />;
@@ -106,7 +106,7 @@ function DashboardSummary({ summary }: DashboardSummaryProps) {
           <div>
             <span className="summary-kicker">Machine</span>
             <h2>Speed</h2>
-            <small className="summary-trend-label">Last hour trend</small>
+            <small className="summary-trend-label">Recent trend</small>
           </div>
           <strong className="summary-live-value">{metricValue(summary?.speed)}</strong>
         </div>
@@ -121,7 +121,7 @@ function DashboardSummary({ summary }: DashboardSummaryProps) {
           <div>
             <span className="summary-kicker">Production</span>
             <h2>Good / Bad Bags</h2>
-            <small className="summary-trend-label">Last hour trend</small>
+            <small className="summary-trend-label">Recent trend</small>
           </div>
           <div className="summary-mode-toggle">
             {(['shift', 'job', 'total'] as ProductionMode[]).map((item) => (
@@ -135,23 +135,27 @@ function DashboardSummary({ summary }: DashboardSummaryProps) {
             ))}
           </div>
         </div>
-        <div className="summary-production-values">
-          <div className="summary-production-pill good">
-            <span>Good</span>
-            <strong>{metricValue(production?.good)}</strong>
+        <div className="summary-production-layout">
+          <div className="summary-production-values">
+            <div className="summary-production-pill good">
+              <span>Good</span>
+              <strong>{metricValue(production?.good)}</strong>
+            </div>
+            <div className="summary-production-pill bad">
+              <span>Bad</span>
+              <strong>{metricValue(production?.bad)}</strong>
+            </div>
           </div>
-          <div className="summary-production-pill bad">
-            <span>Bad</span>
-            <strong>{metricValue(production?.bad)}</strong>
+          <div className="summary-production-trend">
+            <Sparkline
+              series={[
+                { name: 'Good', points: production?.good?.points ?? [] },
+                { name: 'Bad', points: production?.bad?.points ?? [] }
+              ]}
+              colors={['#22c55e', '#ef4444']}
+            />
           </div>
         </div>
-        <Sparkline
-          series={[
-            { name: 'Good', points: production?.good?.points ?? [] },
-            { name: 'Bad', points: production?.bad?.points ?? [] }
-          ]}
-          colors={['#22c55e', '#ef4444']}
-        />
       </section>
     </div>
   );
