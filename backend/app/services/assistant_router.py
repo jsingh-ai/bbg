@@ -38,6 +38,8 @@ def route_assistant_message(message: str, explicit_time_range: str | None = None
         (
             "comparetodaytoyesterday",
             "todayvsyesterday",
+            "vsyesterday",
+            "betterthanyesterday",
         ),
     ):
         compare_to = "yesterday"
@@ -99,6 +101,9 @@ def route_assistant_message(message: str, explicit_time_range: str | None = None
             "shiftproduction",
             "comparetoday",
             "todayvsyesterday",
+            "vsyesterday",
+            "betterthanyesterday",
+            "compare",
         ),
     )
 

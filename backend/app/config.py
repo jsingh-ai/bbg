@@ -46,6 +46,10 @@ class Settings(BaseSettings):
     assistant_excluded_section_keys: str = "i,alarm system"
     assistant_excluded_path_contains: str = "/i/o/,alarm system"
     assistant_excluded_tag_terms: str = "counter,count,number of,good,bad,total,shift,job,active alarms,max severity,storageWear"
+    assistant_excluded_state_terms: str = "state,status,mode"
+    assistant_state_context_enabled: bool = True
+    assistant_dependent_speed_terms: str = "current speed,cycle performance"
+    assistant_speed_context_enabled: bool = True
 
     cors_origins: str = Field(default="http://localhost:5173,http://127.0.0.1:5173")
 
@@ -81,6 +85,14 @@ class Settings(BaseSettings):
     @property
     def assistant_excluded_tag_term_list(self) -> list[str]:
         return [item.strip().lower() for item in self.assistant_excluded_tag_terms.split(",") if item.strip()]
+
+    @property
+    def assistant_excluded_state_term_list(self) -> list[str]:
+        return [item.strip().lower() for item in self.assistant_excluded_state_terms.split(",") if item.strip()]
+
+    @property
+    def assistant_dependent_speed_term_list(self) -> list[str]:
+        return [item.strip().lower() for item in self.assistant_dependent_speed_terms.split(",") if item.strip()]
 
 
 @lru_cache

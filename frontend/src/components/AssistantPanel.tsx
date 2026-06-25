@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Bot, ChevronDown, ChevronUp, SearchCheck, Send, Sparkles, User } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api/client';
 import type { AssistantChatResponse } from '../types';
 
@@ -31,6 +31,7 @@ function AssistantPanel({ enabled }: AssistantPanelProps) {
   const [showProductionCandidates, setShowProductionCandidates] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const conversationId = useMemo(() => `assistant-${Date.now()}`, []);
+  const threadRef = useRef<HTMLDivElement | null>(null);
 
   const chatMutation = useMutation({
     mutationFn: (text: string) => api.assistantChat({ message: text, conversation_id: conversationId }),
@@ -63,6 +64,11 @@ function AssistantPanel({ enabled }: AssistantPanelProps) {
     if (!trimmed || chatMutation.isPending) return;
     chatMutation.mutate(trimmed);
   };
+
+  useEffect(() => {
+    if (!expanded || !threadRef.current) return;
+    threadRef.current.scrollTop = threadRef.current.scrollHeight;
+  }, [expanded, messages, chatMutation.isPending]);
 
   return (
     <section className={expanded ? 'assistant-panel panel-fill expanded' : 'assistant-panel panel-fill collapsed'}>
@@ -226,7 +232,7 @@ function AssistantPanel({ enabled }: AssistantPanelProps) {
             ))}
           </div>
 
-          <div className="assistant-thread">
+          <div className="assistant-thread" ref={threadRef}>
             {!messages.length && (
               <div className="assistant-empty">
                 Ask about production, stops, last-hour changes, or a section like the unwinder or dancer.

@@ -44,6 +44,10 @@ ASSISTANT_MAX_ROWS=5000
 ASSISTANT_EXCLUDED_SECTION_KEYS=i,alarm system
 ASSISTANT_EXCLUDED_PATH_CONTAINS=/i/o/,alarm system
 ASSISTANT_EXCLUDED_TAG_TERMS=counter,count,number of,good,bad,total,shift,job,active alarms,max severity,storageWear
+ASSISTANT_EXCLUDED_STATE_TERMS=state,status,mode
+ASSISTANT_STATE_CONTEXT_ENABLED=true
+ASSISTANT_DEPENDENT_SPEED_TERMS=current speed,cycle performance
+ASSISTANT_SPEED_CONTEXT_ENABLED=true
 ```
 
 Notes:
@@ -151,6 +155,14 @@ They do not apply to:
 
 Machine speed is treated as context-only by default for general process ranking. It can still appear as stop context, but it is removed from the visible ranked process-variable lists unless the user explicitly asks about speed, stops, downtime, or machine state.
 
+State, status, and mode tags are also context-only by default for general process questions. Dependent speed and performance tags such as `current speed` and `cycle performance` are moved to context by default unless the user explicitly asks about speed, performance, or motion.
+
+Repeated names are disambiguated with contextual labels derived from OPC path segments. For example:
+
+- `nozzle - 3 / flow rate`
+- `nozzle - a-side / current speed`
+- `web tension / currentPressure`
+
 ## Production Calculation
 
 Production uses the configured good/bad counter tags from `opc_tag_values`.
@@ -161,6 +173,8 @@ Optional total-counter support:
 - `ASSISTANT_PRODUCTION_MODE=auto`
 
 When good/bad semantics look suspicious, the assistant still shows those values with warnings but can also show a `Total Counter` card from the configured total-production counter.
+
+Plain production questions such as `How was production today?` no longer auto-compare to yesterday. Comparison is only added when the user explicitly asks, such as `Compare today to yesterday` or `today vs yesterday`.
 
 Method:
 
@@ -234,6 +248,8 @@ Returned stop metrics:
 If the first in-range speed sample is already at or below the stop threshold, the assistant marks that downtime period as open at the start of the selected range instead of pretending it observed the transition into the stop.
 
 If the last speed sample is still at or below the threshold, the final stop is marked open-ended.
+
+The machine speed tag remains the stop marker. It is not presented as proof of process cause in around-stop analysis.
 
 ## Parameter Change Ranking
 
@@ -325,6 +341,14 @@ Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/assistant/chat" -Method Post -
 
 ```powershell
 Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/assistant/chat" -Method Post -ContentType "application/json" -Body '{"message":"What changed around the last stop?"}' | ConvertTo-Json -Depth 20
+```
+
+```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/assistant/chat" -Method Post -ContentType "application/json" -Body '{"message":"Show me state changes around the last stop"}' | ConvertTo-Json -Depth 20
+```
+
+```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/assistant/chat" -Method Post -ContentType "application/json" -Body '{"message":"Show me speed changes around the last stop"}' | ConvertTo-Json -Depth 20
 ```
 
 ```powershell

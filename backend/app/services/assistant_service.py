@@ -40,8 +40,6 @@ def _build_table(title: str, columns: list[str], rows: list[list[Any]]) -> dict[
 def _comparison_range_for_route(route: dict[str, Any], message: str) -> str | None:
     if route.get("compare_to"):
         return str(route["compare_to"])
-    if route.get("intent") == "production_summary" and route.get("time_range") == "today" and "production" in str(route.get("matched_rule", "")):
-        return "yesterday"
     return None
 
 
@@ -98,6 +96,23 @@ def _section_label(route: dict[str, Any], matching_tags: list[dict[str, Any]]) -
     if route.get("resolved_system"):
         return str(route["resolved_system"])
     return None
+
+
+def _top_labels(items: list[dict[str, Any]], limit: int = 3) -> list[str]:
+    if not items:
+        return []
+    label_counts: dict[str, int] = {}
+    for item in items:
+        label = str(item.get("label") or "")
+        label_counts[label] = label_counts.get(label, 0) + 1
+    resolved: list[str] = []
+    for item in items[:limit]:
+        label = str(item.get("label") or "")
+        if label_counts.get(label, 0) > 1 and item.get("section_key"):
+            resolved.append(f"{label} in {item['section_key']}")
+        else:
+            resolved.append(label)
+    return resolved
 
 
 def _deterministic_answer(intent: str, raw: dict[str, Any]) -> str:
@@ -162,9 +177,9 @@ def _deterministic_answer(intent: str, raw: dict[str, Any]) -> str:
         if not top:
             context = raw.get("context", {})
             if context.get("machine_speed"):
-                return "After filtering counters, alarms, PLC/IO, zero-range values, and the speed marker itself, I did not find other process variables that changed enough in the selected range."
+                return "After filtering counters, alarms, PLC/IO, state/status values, dependent speeds, zero-range values, and the speed marker itself, I did not find other process variables that changed enough in the selected range."
             return "No visible process parameter movement was found for that range after applying the default filters."
-        labels = ", ".join(item["label"] for item in top[:3])
+        labels = ", ".join(_top_labels(top))
         prefix = f"In {raw['section']}, " if raw.get("section") else ""
         return f"{prefix}the most changed parameters were {labels}."
 
@@ -175,23 +190,27 @@ def _deterministic_answer(intent: str, raw: dict[str, Any]) -> str:
             suffix = " The last stop is still open." if raw.get("context", {}).get("stop_is_open_ended") else ""
             stop_time = raw.get("stop_time") or "the detected stop time"
             return (
-                f"The machine speed dropped to zero at {stop_time}. After filtering counters, alarms, PLC/IO, zero-range values, and the speed marker itself, "
+                f"The machine speed dropped to zero at {stop_time}. After filtering counters, alarms, PLC/IO, state/status values, dependent speeds, zero-range values, and the speed marker itself, "
                 f"I did not find other process variables that changed enough in the selected window.{suffix}"
             )
-        after_label = after[0]["label"] if after else "n/a"
-        before_label = before[0]["label"] if before else "n/a"
+        after_label = f"{after[0]['label']} in {after[0]['section_key']}" if after else "n/a"
+        before_label = f"{before[0]['label']} in {before[0]['section_key']}" if before else "n/a"
         suffix = " The last stop is still open." if raw.get("context", {}).get("stop_is_open_ended") else ""
-        return f"Around the last stop, the strongest pre-stop movement was {before_label} and the strongest post-stop effect was {after_label}.{suffix}"
+        return (
+            f"Around the last stop, the largest observed pre-stop movement was {before_label}. "
+            f"The largest observed post-stop effect was {after_label}. "
+            f"This is correlation around the stop, not proof of cause.{suffix}"
+        )
 
     if intent == "section_summary":
         top = raw.get("most_changed", {}).get("parameters") or []
         section_label = raw.get("section_label") or raw.get("section") or "the requested section"
         prefix = "For sections" if "," in str(section_label) else "For"
         if top:
-            return f"{prefix} {section_label}, the most changed parameters were {', '.join(item['label'] for item in top[:3])}."
+            return f"{prefix} {section_label}, the most changed parameters were {', '.join(_top_labels(top))}."
         excluded = raw.get("most_changed", {}).get("excluded_counts") or {}
         if excluded.get("zero_range", 0) > 0:
-            return f"{prefix} {section_label}, I found matching tags, but they did not change in the selected range."
+            return f"{prefix} {section_label}, I found tags for {section_label}, but the process values did not change in the selected range."
         return f"{prefix} {section_label}, I found matching tags, but no visible process variables remained after filtering."
 
     return (
@@ -344,10 +363,33 @@ def _format_most_changed_response(raw: dict[str, Any]) -> tuple[list[dict[str, A
     tables.append(
         _build_table(
             "Excluded Rows",
-            ["Excluded Section", "Excluded Tag Term", "Zero Range", "Machine Speed Context"],
-            [[excluded.get("excluded_section", 0), excluded.get("excluded_tag_term", 0), excluded.get("zero_range", 0), excluded.get("machine_speed_context", 0)]],
+            ["Excluded Section", "Excluded Tag Term", "Zero Range", "Machine Speed Context", "State Context", "Dependent Speed Context"],
+            [[excluded.get("excluded_section", 0), excluded.get("excluded_tag_term", 0), excluded.get("zero_range", 0), excluded.get("machine_speed_context", 0), excluded.get("state_context", 0), excluded.get("dependent_speed_context", 0)]],
         )
     )
+    context = raw.get("context") or {}
+    if context.get("state_changes"):
+        tables.append(
+            _build_table(
+                "State / Status Changes",
+                ["Section", "Variable", "Min", "Max", "Range", "Avg", "Samples"],
+                [
+                    [item.get("section_key"), item.get("label"), item.get("min"), item.get("max"), item.get("range"), item.get("avg"), item.get("sample_count")]
+                    for item in context.get("state_changes", [])
+                ],
+            )
+        )
+    if context.get("dependent_speed_changes"):
+        tables.append(
+            _build_table(
+                "Speed / Performance Context",
+                ["Section", "Variable", "Min", "Max", "Range", "Avg", "Samples"],
+                [
+                    [item.get("section_key"), item.get("label"), item.get("min"), item.get("max"), item.get("range"), item.get("avg"), item.get("sample_count")]
+                    for item in context.get("dependent_speed_changes", [])
+                ],
+            )
+        )
     return cards, tables
 
 
@@ -397,10 +439,49 @@ def _format_around_stop_response(raw: dict[str, Any]) -> tuple[list[dict[str, An
     tables.append(
         _build_table(
             "Excluded Rows",
-            ["Excluded Section", "Excluded Tag Term", "Zero Range", "Machine Speed Context"],
-            [[excluded.get("excluded_section", 0), excluded.get("excluded_tag_term", 0), excluded.get("zero_range", 0), excluded.get("machine_speed_context", 0)]],
+            ["Excluded Section", "Excluded Tag Term", "Zero Range", "Machine Speed Context", "State Context", "Dependent Speed Context"],
+            [[excluded.get("excluded_section", 0), excluded.get("excluded_tag_term", 0), excluded.get("zero_range", 0), excluded.get("machine_speed_context", 0), excluded.get("state_context", 0), excluded.get("dependent_speed_context", 0)]],
         )
     )
+    context = raw.get("context") or {}
+    if context.get("state_changes"):
+        tables.append(
+            _build_table(
+                "State / Status Changes",
+                ["Section", "Variable", "Before Avg", "After Avg", "Delta Avg", "Before Movement", "After Effect"],
+                [
+                    [
+                        item.get("section_key"),
+                        item.get("label"),
+                        item.get("before_avg"),
+                        item.get("after_avg"),
+                        item.get("delta_avg"),
+                        item.get("before_stop_movement"),
+                        item.get("after_stop_effect"),
+                    ]
+                    for item in context.get("state_changes", [])
+                ],
+            )
+        )
+    if context.get("dependent_speed_changes"):
+        tables.append(
+            _build_table(
+                "Speed / Performance Context",
+                ["Section", "Variable", "Before Avg", "After Avg", "Delta Avg", "Before Movement", "After Effect"],
+                [
+                    [
+                        item.get("section_key"),
+                        item.get("label"),
+                        item.get("before_avg"),
+                        item.get("after_avg"),
+                        item.get("delta_avg"),
+                        item.get("before_stop_movement"),
+                        item.get("after_stop_effect"),
+                    ]
+                    for item in context.get("dependent_speed_changes", [])
+                ],
+            )
+        )
     return cards, tables
 
 
@@ -420,8 +501,8 @@ def _format_section_response(raw: dict[str, Any]) -> tuple[list[dict[str, Any]],
     tables.append(
         _build_table(
             "Excluded Rows",
-            ["Excluded Section", "Excluded Tag Term", "Zero Range", "Machine Speed Context"],
-            [[excluded.get("excluded_section", 0), excluded.get("excluded_tag_term", 0), excluded.get("zero_range", 0), excluded.get("machine_speed_context", 0)]],
+            ["Excluded Section", "Excluded Tag Term", "Zero Range", "Machine Speed Context", "State Context", "Dependent Speed Context"],
+            [[excluded.get("excluded_section", 0), excluded.get("excluded_tag_term", 0), excluded.get("zero_range", 0), excluded.get("machine_speed_context", 0), excluded.get("state_context", 0), excluded.get("dependent_speed_context", 0)]],
         )
     )
     return cards, tables
@@ -473,6 +554,7 @@ def handle_assistant_chat(message: str, time_range: str | None = None, conversat
             apply_process_filters=not explicit_system_request,
             explicit_system_request=explicit_system_request,
             include_speed_in_ranking=explicit_speed_request,
+            message=message,
         )
         if route.get("resolved_system"):
             raw["section"] = route.get("resolved_system")
@@ -503,6 +585,7 @@ def handle_assistant_chat(message: str, time_range: str | None = None, conversat
                     apply_process_filters=not explicit_system_request,
                     explicit_system_request=explicit_system_request,
                     context={"stop_is_open_ended": bool(last_stop.get("open_ended"))},
+                    message=message,
                 )
                 cards, tables = _format_around_stop_response(raw)
     elif intent == "section_summary":
@@ -519,6 +602,7 @@ def handle_assistant_chat(message: str, time_range: str | None = None, conversat
                 apply_process_filters=not explicit_system_request,
                 explicit_system_request=explicit_system_request,
                 include_speed_in_ranking=explicit_speed_request,
+                message=message,
             ),
         }
         cards, tables = _format_section_response(raw)

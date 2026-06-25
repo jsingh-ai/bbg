@@ -220,6 +220,10 @@ export interface AssistantDiagnosticsResponse {
     excluded_section_keys?: string[];
     excluded_path_contains?: string[];
     excluded_tag_terms?: string[];
+    excluded_state_terms?: string[];
+    state_context_enabled?: boolean;
+    dependent_speed_terms?: string[];
+    speed_context_enabled?: boolean;
   };
   database: {
     connected: boolean;
