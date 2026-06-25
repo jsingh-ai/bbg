@@ -40,6 +40,19 @@ def _timezone(name: str | None = None):
         return datetime.now().astimezone().tzinfo
 
 
+def _timezone_name(zone: Any, configured_name: str | None = None) -> str:
+    if hasattr(zone, "key") and getattr(zone, "key"):
+        return str(getattr(zone, "key"))
+    if configured_name:
+        return configured_name
+    if hasattr(zone, "tzname"):
+        try:
+            return str(zone.tzname(None) or "local")
+        except Exception:
+            return "local"
+    return "local"
+
+
 def _as_iso(value: datetime | None) -> str | None:
     return value.isoformat() if value else None
 
@@ -311,7 +324,9 @@ def get_assistant_diagnostics() -> dict[str, Any]:
 
 
 def parse_time_range(text_or_enum: str | None, timezone: str | None = None) -> TimeRange:
-    zone = _timezone(timezone)
+    configured_timezone = timezone or _settings().assistant_default_timezone
+    zone = _timezone(configured_timezone)
+    timezone_name = _timezone_name(zone, configured_timezone)
     now = datetime.now(zone).replace(second=0, microsecond=0)
     raw = normalize_key(text_or_enum or "")
     mapping = {
@@ -324,19 +339,19 @@ def parse_time_range(text_or_enum: str | None, timezone: str | None = None) -> T
     key = mapping.get(raw, "today")
     if key == "today":
         start = now.replace(hour=0, minute=0)
-        return TimeRange(key=key, label="Today", start=start.replace(tzinfo=None), end=now.replace(tzinfo=None), timezone=zone.key)
+        return TimeRange(key=key, label="Today", start=start.replace(tzinfo=None), end=now.replace(tzinfo=None), timezone=timezone_name)
     if key == "yesterday":
         today_start = now.replace(hour=0, minute=0)
         start = today_start - timedelta(days=1)
-        return TimeRange(key=key, label="Yesterday", start=start.replace(tzinfo=None), end=today_start.replace(tzinfo=None), timezone=zone.key)
+        return TimeRange(key=key, label="Yesterday", start=start.replace(tzinfo=None), end=today_start.replace(tzinfo=None), timezone=timezone_name)
     if key == "last_hour":
         start = now - timedelta(hours=1)
-        return TimeRange(key=key, label="Last Hour", start=start.replace(tzinfo=None), end=now.replace(tzinfo=None), timezone=zone.key)
+        return TimeRange(key=key, label="Last Hour", start=start.replace(tzinfo=None), end=now.replace(tzinfo=None), timezone=timezone_name)
     if key == "last_24_hours":
         start = now - timedelta(hours=24)
-        return TimeRange(key=key, label="Last 24 Hours", start=start.replace(tzinfo=None), end=now.replace(tzinfo=None), timezone=zone.key)
+        return TimeRange(key=key, label="Last 24 Hours", start=start.replace(tzinfo=None), end=now.replace(tzinfo=None), timezone=timezone_name)
     start = now - timedelta(days=7)
-    return TimeRange(key=key, label="Last Week", start=start.replace(tzinfo=None), end=now.replace(tzinfo=None), timezone=zone.key)
+    return TimeRange(key=key, label="Last Week", start=start.replace(tzinfo=None), end=now.replace(tzinfo=None), timezone=timezone_name)
 
 
 def _fetch_numeric_series(
