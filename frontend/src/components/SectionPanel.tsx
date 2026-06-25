@@ -59,7 +59,7 @@ function ValueRows({
               <td>{row.label}</td>
               <td className="current-value">{row.current_value}</td>
               <td className="action-col">
-                {row.is_numeric ? (
+                {Boolean(row.is_history_numeric ?? row.is_numeric) ? (
                   <button
                     className="icon-button"
                     disabled={savedVariableIds.includes(row.tag_id)}
@@ -103,7 +103,10 @@ function SectionPanel({
   const values = liveQuery.data?.values ?? [];
   const shown = useMemo(() => values.filter((row) => Boolean(row.is_visible)), [values]);
   const hidden = useMemo(() => values.filter((row) => !Boolean(row.is_visible)), [values]);
-  const numericShown = useMemo(() => values.filter((row) => row.is_numeric && Boolean(row.is_visible)), [values]);
+  const numericShown = useMemo(
+    () => values.filter((row) => Boolean(row.is_visible) && Boolean(row.is_history_numeric ?? row.is_numeric)),
+    [values]
+  );
 
   useEffect(() => {
     if (onNumericValuesChange && sectionKey) {

@@ -61,6 +61,7 @@ export interface LiveValue {
   label: string;
   current_value: string;
   is_numeric: boolean;
+  is_history_numeric?: boolean;
 }
 
 export interface SectionLiveResponse {

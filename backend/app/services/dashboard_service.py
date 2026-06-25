@@ -32,27 +32,33 @@ PRODUCTION_PATHS = {
 UPTIME_WINDOW_MINUTES = 24 * 60
 
 
-def _latest_numeric_history_by_tag(tag_ids: list[int]) -> dict[int, dict[str, Any]]:
+def _latest_history_by_tag(tag_ids: list[int]) -> dict[int, dict[str, Any]]:
     if not tag_ids:
         return {}
     placeholders = ",".join(["%s"] * len(tag_ids))
     rows = pool.fetch_all(
         f"""
-        SELECT v.tag_id, v.created_at, v.value_num
+        SELECT v.tag_id, v.created_at, v.value_kind, v.value_num, v.value_bool, v.value_text
         FROM opc_tag_values v
         JOIN (
             SELECT tag_id, MAX(created_at) AS latest_created_at
             FROM opc_tag_values
             WHERE tag_id IN ({placeholders})
-              AND value_kind = 1
-              AND value_num IS NOT NULL
+              AND (
+                value_num IS NOT NULL
+                OR value_bool IS NOT NULL
+                OR value_text IS NOT NULL
+              )
             GROUP BY tag_id
         ) latest
           ON latest.tag_id = v.tag_id
          AND latest.latest_created_at = v.created_at
         WHERE v.tag_id IN ({placeholders})
-          AND v.value_kind = 1
-          AND v.value_num IS NOT NULL
+          AND (
+            v.value_num IS NOT NULL
+            OR v.value_bool IS NOT NULL
+            OR v.value_text IS NOT NULL
+          )
         """,
         tuple([*tag_ids, *tag_ids]),
     )
@@ -81,14 +87,40 @@ def _should_use_history_fallback(row: dict[str, Any]) -> bool:
     return _is_timeout_marker(value_text) or bool(error_text)
 
 
-def _apply_numeric_history_fallback(item: dict[str, Any], history_row: dict[str, Any] | None) -> None:
+def _apply_history_fallback(item: dict[str, Any], history_row: dict[str, Any] | None) -> None:
     if not history_row:
         return
-    item["value_kind"] = 1
+    item["value_kind"] = history_row.get("value_kind")
     item["value_num"] = history_row.get("value_num")
+    item["value_bool"] = history_row.get("value_bool")
     item["value_text"] = None
+    if history_row.get("value_text") is not None:
+        item["value_text"] = history_row.get("value_text")
     item["error_text"] = None
     item["current_value"] = formatted_value(item)
+
+
+def _filter_numeric_tag_ids(machine_id: int, tag_ids: list[int]) -> list[int]:
+    if not tag_ids:
+        return []
+    placeholders = ",".join(["%s"] * len(tag_ids))
+    rows = pool.fetch_all(
+        f"""
+        SELECT tag_id, data_type
+        FROM opc_tags
+        WHERE machine_id = %s
+          AND tag_id IN ({placeholders})
+        """,
+        tuple([machine_id, *tag_ids]),
+    )
+    numeric_ids: list[int] = []
+    for row in rows:
+        tag_id = row.get("tag_id")
+        if tag_id is None:
+            continue
+        if is_numeric_data_type(row.get("data_type")):
+            numeric_ids.append(int(tag_id))
+    return numeric_ids
 
 
 def get_machine(machine_id: int) -> dict[str, Any]:
@@ -140,7 +172,7 @@ def get_dashboard_summary(machine_id: int, minutes: int | None = None) -> dict[s
     tag_by_path = {normalize_key(str(row.get("opc_path") or "")): row for row in tag_rows}
     tag_ids = [int(row["tag_id"]) for row in tag_rows if row.get("tag_id") is not None]
     history_by_tag: dict[int, list[list[Any]]] = defaultdict(list)
-    latest_numeric_history = _latest_numeric_history_by_tag(tag_ids)
+    latest_history = _latest_history_by_tag(tag_ids)
 
     if tag_ids:
         history_placeholders = ",".join(["%s"] * len(tag_ids))
@@ -169,7 +201,7 @@ def get_dashboard_summary(machine_id: int, minutes: int | None = None) -> dict[s
         item["label"] = display_name(row)
         item["current_value"] = formatted_value(row)
         if _should_use_history_fallback(row):
-            _apply_numeric_history_fallback(item, latest_numeric_history.get(int(row["tag_id"])))
+            _apply_history_fallback(item, latest_history.get(int(row["tag_id"])))
         item["points"] = history_by_tag.get(int(row["tag_id"]), [])
         return item
 
@@ -475,7 +507,7 @@ def get_section_live_values(machine_id: int, section_key: str, include_hidden: b
         sync_machine(machine_id)
         rows = fetch_rows()
 
-    latest_numeric_history = _latest_numeric_history_by_tag(
+    latest_history = _latest_history_by_tag(
         [int(row["tag_id"]) for row in rows if row.get("tag_id") is not None]
     )
     items: list[dict[str, Any]] = []
@@ -484,8 +516,9 @@ def get_section_live_values(machine_id: int, section_key: str, include_hidden: b
         item["label"] = display_name(row)
         item["current_value"] = formatted_value(row)
         item["is_numeric"] = bool(row.get("value_kind") == 1 or is_numeric_data_type(row.get("data_type")))
+        item["is_history_numeric"] = bool(is_numeric_data_type(row.get("data_type")))
         if _should_use_history_fallback(row):
-            _apply_numeric_history_fallback(item, latest_numeric_history.get(int(row["tag_id"])))
+            _apply_history_fallback(item, latest_history.get(int(row["tag_id"])))
         items.append(item)
 
     section = pool.fetch_one(
@@ -533,6 +566,9 @@ def get_history(machine_id: int, section_key: str | None, start: datetime, end: 
         raise HTTPException(status_code=400, detail="End time must be after start time")
     if len(tag_ids) > 25:
         raise HTTPException(status_code=400, detail="Select 25 or fewer tags for one chart")
+    tag_ids = _filter_numeric_tag_ids(machine_id, tag_ids)
+    if not tag_ids:
+        return {"series": [], "start": start.isoformat(), "end": end.isoformat()}
 
     placeholders = ",".join(["%s"] * len(tag_ids))
     params: list[Any] = [machine_id]

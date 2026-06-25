@@ -83,7 +83,7 @@ function DashboardPage({ machineId, refreshSeconds, assistantEnabled, theme }: D
   }, []);
 
   const handleSaveVariable = useCallback((value: LiveValue) => {
-    if (!value.is_numeric) return;
+    if (!(value.is_history_numeric ?? value.is_numeric)) return;
     setSavedVariables((prev) => {
       if (prev.some((item) => item.tag_id === value.tag_id)) {
         return prev;
