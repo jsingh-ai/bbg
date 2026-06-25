@@ -10,6 +10,7 @@ interface HistoryChartProps {
   machineId: number;
   sectionKey: string | null;
   numericValues: LiveValue[];
+  refreshMs: number;
 }
 
 function toLocalInputValue(date: Date) {
@@ -28,7 +29,7 @@ function defaultRange() {
   return { start: toLocalInputValue(start), end: toLocalInputValue(end) };
 }
 
-function HistoryChart({ machineId, sectionKey, numericValues }: HistoryChartProps) {
+function HistoryChart({ machineId, sectionKey, numericValues, refreshMs }: HistoryChartProps) {
   const chartRef = useRef<HTMLDivElement | null>(null);
   const chartInstance = useRef<echarts.ECharts | null>(null);
   const [range, setRange] = useState(defaultRange);
@@ -42,6 +43,24 @@ function HistoryChart({ machineId, sectionKey, numericValues }: HistoryChartProp
       .map((row) => row.tag_id);
     setSelectedTagIds(defaultIds);
   }, [sectionKey, numericValues]);
+
+  useEffect(() => {
+    if (!sectionKey) return;
+    const handle = window.setInterval(() => {
+      setRange((prev) => {
+        const start = new Date(prev.start);
+        const end = new Date(prev.end);
+        const windowMs = Math.max(end.getTime() - start.getTime(), 60_000);
+        const nextEnd = new Date();
+        const nextStart = new Date(nextEnd.getTime() - windowMs);
+        return {
+          start: toLocalInputValue(nextStart),
+          end: toLocalInputValue(nextEnd)
+        };
+      });
+    }, refreshMs);
+    return () => window.clearInterval(handle);
+  }, [sectionKey, refreshMs]);
 
   const tagIds = useMemo(() => selectedTagIds.slice().sort((a, b) => a - b), [selectedTagIds]);
 

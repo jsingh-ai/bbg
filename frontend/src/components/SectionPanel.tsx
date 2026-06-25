@@ -103,14 +103,19 @@ function SectionPanel({ machineId, sectionKey, refreshMs, onNumericValuesChange 
         </div>
       </div>
 
-      {liveQuery.data?.section.section_photo_url ? (
-        <img className="section-photo" src={liveQuery.data.section.section_photo_url} alt={liveQuery.data.section.display_label} />
-      ) : (
-        <div className="section-photo-placeholder">No section photo found</div>
-      )}
-
-      <h3 className="subheading">Shown Variables</h3>
-      <ValueRows machineId={machineId} values={shown} visible className="section-values-scroll" />
+      <div className="section-content-row">
+        <div className="section-media-column">
+          {liveQuery.data?.section.section_photo_url ? (
+            <img className="section-photo" src={liveQuery.data.section.section_photo_url} alt={liveQuery.data.section.display_label} />
+          ) : (
+            <div className="section-photo-placeholder">No section photo found</div>
+          )}
+        </div>
+        <div className="section-values-column">
+          <h3 className="subheading">Shown Variables</h3>
+          <ValueRows machineId={machineId} values={shown} visible className="section-values-scroll" />
+        </div>
+      </div>
 
       <details className="hidden-vars">
         <summary>Hidden Variables ({hidden.length})</summary>
