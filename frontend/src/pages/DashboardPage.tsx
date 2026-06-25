@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { RefreshCcw } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
 import AlertPanel from '../components/AlertPanel';
 import AssistantPanel from '../components/AssistantPanel';
@@ -22,6 +22,8 @@ function DashboardPage({ machineId, refreshSeconds, assistantEnabled }: Dashboar
   const [selectedSectionKey, setSelectedSectionKey] = useState<string | null>(null);
   const [numericValues, setNumericValues] = useState<LiveValue[]>([]);
   const [savedVariables, setSavedVariables] = useState<SavedHistoryVariable[]>([]);
+  const savedHistoryRef = useRef<HTMLDivElement | null>(null);
+  const previousSavedCountRef = useRef(0);
   const refreshMs = Math.max(refreshSeconds, 10) * 1000;
 
   const dashboardQuery = useQuery({
@@ -53,7 +55,17 @@ function DashboardPage({ machineId, refreshSeconds, assistantEnabled }: Dashboar
     setSelectedSectionKey(null);
     setNumericValues([]);
     setSavedVariables([]);
+    previousSavedCountRef.current = 0;
   }, [machineId]);
+
+  useEffect(() => {
+    if (savedVariables.length > previousSavedCountRef.current) {
+      window.setTimeout(() => {
+        savedHistoryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 80);
+    }
+    previousSavedCountRef.current = savedVariables.length;
+  }, [savedVariables.length]);
 
   const handleManualRefresh = () => {
     evaluateMutation.mutate();
@@ -152,7 +164,7 @@ function DashboardPage({ machineId, refreshSeconds, assistantEnabled }: Dashboar
           </div>
         )}
         {savedVariables.length > 0 && (
-          <div className="dashboard-saved-history-row">
+          <div className="dashboard-saved-history-row" ref={savedHistoryRef}>
             <SavedVariablesChart
               machineId={machineId}
               refreshMs={refreshMs}
