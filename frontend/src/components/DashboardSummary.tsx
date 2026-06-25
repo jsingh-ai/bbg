@@ -95,27 +95,19 @@ function metricValue(metric?: SummaryMetric) {
   return metric?.current_value ?? '--';
 }
 
+function metricNumber(metric?: SummaryMetric) {
+  const value = metric?.value_num;
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
 function DashboardSummary({ summary }: DashboardSummaryProps) {
   const [mode, setMode] = useState<ProductionMode>('shift');
   const production = summary?.production?.[mode];
+  const speedValue = metricNumber(summary?.speed);
+  const speedPct = speedValue === null ? 0 : Math.max(0, Math.min(100, (speedValue / 150) * 100));
 
   return (
     <div className="dashboard-summary-grid">
-      <section className="summary-card panel-fill">
-        <div className="summary-card-header">
-          <div>
-            <span className="summary-kicker">Machine</span>
-            <h2>Speed</h2>
-            <small className="summary-trend-label">Recent trend</small>
-          </div>
-          <strong className="summary-live-value">{metricValue(summary?.speed)}</strong>
-        </div>
-        <Sparkline
-          series={[{ name: 'Machine Speed', points: summary?.speed?.points ?? [] }]}
-          colors={['#38bdf8']}
-        />
-      </section>
-
       <section className="summary-card panel-fill">
         <div className="summary-card-header">
           <div>
@@ -153,6 +145,34 @@ function DashboardSummary({ summary }: DashboardSummaryProps) {
                 { name: 'Bad', points: production?.bad?.points ?? [] }
               ]}
               colors={['#22c55e', '#ef4444']}
+            />
+          </div>
+        </div>
+      </section>
+
+      <section className="summary-card panel-fill">
+        <div className="summary-card-header">
+          <div>
+            <span className="summary-kicker">Machine</span>
+            <h2>Speed</h2>
+            <small className="summary-trend-label">Recent trend</small>
+          </div>
+        </div>
+        <div className="summary-speed-layout">
+          <div className="summary-speed-kpi">
+            <span className="summary-speed-value">{metricValue(summary?.speed)}</span>
+            <div className="summary-speed-scale">
+              <div className="summary-speed-scale-fill" style={{ width: `${speedPct}%` }} />
+            </div>
+            <div className="summary-speed-range">
+              <span>0</span>
+              <span>150</span>
+            </div>
+          </div>
+          <div className="summary-speed-trend">
+            <Sparkline
+              series={[{ name: 'Machine Speed', points: summary?.speed?.points ?? [] }]}
+              colors={['#38bdf8']}
             />
           </div>
         </div>

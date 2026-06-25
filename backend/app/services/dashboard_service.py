@@ -9,7 +9,7 @@ from fastapi import HTTPException
 from ..config import get_settings
 from ..db import pool
 from .photo_service import safe_photo_url, static_url
-from .section_parser import display_name, is_numeric_data_type
+from .section_parser import display_name, is_numeric_data_type, normalize_key
 from .sync_service import sync_machine
 from .value_format import formatted_value, row_json_safe, rows_json_safe
 
@@ -54,19 +54,17 @@ def get_dashboard_summary(machine_id: int, minutes: int | None = None) -> dict[s
     for mode in ("shift", "job", "total"):
         requested_paths.extend([PRODUCTION_PATHS[mode]["good"], PRODUCTION_PATHS[mode]["bad"]])
 
-    placeholders = ",".join(["%s"] * len(requested_paths))
     tag_rows = pool.fetch_all(
-        f"""
+        """
         SELECT t.tag_id, t.opc_path, t.display_name, t.browse_name, t.node_id, l.value_kind, l.value_num, l.value_bool, l.value_text, l.error_text
         FROM opc_tags t
         LEFT JOIN opc_tag_latest l ON l.tag_id = t.tag_id
         WHERE t.machine_id = %s
           AND t.is_active = 1
-          AND t.opc_path IN ({placeholders})
         """,
-        tuple([machine_id, *requested_paths]),
+        (machine_id,),
     )
-    tag_by_path = {str(row["opc_path"]): row for row in tag_rows}
+    tag_by_path = {normalize_key(str(row.get("opc_path") or "")): row for row in tag_rows}
     tag_ids = [int(row["tag_id"]) for row in tag_rows if row.get("tag_id") is not None]
     history_by_tag: dict[int, list[list[Any]]] = defaultdict(list)
 
@@ -90,7 +88,7 @@ def get_dashboard_summary(machine_id: int, minutes: int | None = None) -> dict[s
             history_by_tag[int(row["tag_id"])].append([timestamp, row.get("value_num")])
 
     def metric_for_path(opc_path: str) -> dict[str, Any]:
-        row = tag_by_path.get(opc_path)
+        row = tag_by_path.get(normalize_key(opc_path))
         if not row:
             return {"opc_path": opc_path, "label": opc_path, "current_value": "--", "value_num": None, "points": []}
         item = row_json_safe(row)
