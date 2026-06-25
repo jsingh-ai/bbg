@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Activity, Bell, Blocks, ChefHat, LayoutDashboard } from 'lucide-react';
+import { Activity, Bell, Blocks, ChefHat, LayoutDashboard, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { useMemo, useState, type ReactNode } from 'react';
 import { api } from './api/client';
 import DashboardPage from './pages/DashboardPage';
@@ -18,6 +18,7 @@ const navItems: { key: PageKey; label: string; icon: ReactNode }[] = [
 
 function App() {
   const [page, setPage] = useState<PageKey>('dashboard');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const configQuery = useQuery({ queryKey: ['config'], queryFn: api.getConfig });
   const machinesQuery = useQuery({ queryKey: ['machines'], queryFn: api.listMachines });
   const [machineOverride, setMachineOverride] = useState<number | null>(null);
@@ -32,30 +33,44 @@ function App() {
   const title = configQuery.data?.app_name ?? 'BBG OPC Dashboard';
 
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <div className="brand-block">
-          <div className="brand-icon"><Activity size={24} /></div>
-          <div>
-            <div className="brand-title">{title}</div>
-            <div className="brand-subtitle">Production Monitor</div>
+    <div className={sidebarCollapsed ? 'app-shell sidebar-collapsed' : 'app-shell'}>
+      <aside className={sidebarCollapsed ? 'sidebar collapsed' : 'sidebar'}>
+        <div className="sidebar-top-row">
+          <div className="brand-block">
+            <div className="brand-icon"><Activity size={24} /></div>
+            {!sidebarCollapsed && (
+              <div>
+                <div className="brand-title">{title}</div>
+                <div className="brand-subtitle">Production Monitor</div>
+              </div>
+            )}
           </div>
+          <button
+            className="sidebar-toggle"
+            onClick={() => setSidebarCollapsed((prev) => !prev)}
+            aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            {sidebarCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+          </button>
         </div>
 
-        <div className="machine-picker">
-          <label>Machine</label>
-          <select
-            value={machineId}
-            onChange={(event) => setMachineOverride(Number(event.target.value))}
-          >
-            {machinesQuery.data?.map((item) => (
-              <option value={item.machine_id} key={item.machine_id}>
-                {item.machine_name}
-              </option>
-            ))}
-            {!machinesQuery.data?.length && <option value={machineId}>Machine {machineId}</option>}
-          </select>
-        </div>
+        {!sidebarCollapsed && (
+          <div className="machine-picker">
+            <label>Machine</label>
+            <select
+              value={machineId}
+              onChange={(event) => setMachineOverride(Number(event.target.value))}
+            >
+              {machinesQuery.data?.map((item) => (
+                <option value={item.machine_id} key={item.machine_id}>
+                  {item.machine_name}
+                </option>
+              ))}
+              {!machinesQuery.data?.length && <option value={machineId}>Machine {machineId}</option>}
+            </select>
+          </div>
+        )}
 
         <nav className="sidebar-nav">
           {navItems.map((item) => (
@@ -65,15 +80,17 @@ function App() {
               onClick={() => setPage(item.key)}
             >
               {item.icon}
-              <span>{item.label}</span>
+              {!sidebarCollapsed && <span>{item.label}</span>}
             </button>
           ))}
         </nav>
 
-        <div className="sidebar-footer">
-          <div>{machine?.machine_name ?? `Machine ${machineId}`}</div>
-          <small>Refresh: {configQuery.data?.live_refresh_seconds ?? 60}s</small>
-        </div>
+        {!sidebarCollapsed && (
+          <div className="sidebar-footer">
+            <div>{machine?.machine_name ?? `Machine ${machineId}`}</div>
+            <small>Refresh: {configQuery.data?.live_refresh_seconds ?? 60}s</small>
+          </div>
+        )}
       </aside>
 
       <main className="main-content">

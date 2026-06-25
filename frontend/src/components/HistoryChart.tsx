@@ -175,11 +175,13 @@ function HistoryChart({ machineId, sectionKey, numericValues }: HistoryChartProp
 
   return (
     <section className="history-panel panel-fill">
-      <div className="panel-title-row">
+      <div className="panel-title-row history-header">
         <div>
           <h2>Historical Trends</h2>
           <p>Section: {sectionKey}</p>
         </div>
+      </div>
+      <div className="history-controls-bar">
         <div className="history-controls">
           <button onClick={() => setLastMinutes(15)}>15 min</button>
           <button onClick={setLastHour}>Last hour</button>
