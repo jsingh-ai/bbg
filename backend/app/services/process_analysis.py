@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from math import sqrt
 from typing import Any
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from ..config import get_settings
 from ..db import pool
@@ -33,8 +33,11 @@ def _machine_id() -> int:
     return _settings().default_machine_id
 
 
-def _timezone(name: str | None = None) -> ZoneInfo:
-    return ZoneInfo(name or _settings().assistant_default_timezone)
+def _timezone(name: str | None = None):
+    try:
+        return ZoneInfo(name or _settings().assistant_default_timezone)
+    except ZoneInfoNotFoundError:
+        return datetime.now().astimezone().tzinfo
 
 
 def _as_iso(value: datetime | None) -> str | None:
