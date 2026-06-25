@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 from datetime import datetime
 from typing import Any
 
@@ -16,11 +18,15 @@ from .process_analysis import (
     get_production_summary,
     get_stop_summary,
     get_values_around_stop,
+    _is_explicit_speed_request,
     parse_time_range,
     search_tags,
     _is_explicit_system_request,
 )
 from .section_parser import parse_section_key
+
+
+SERVICE_STARTED_AT = datetime.now().isoformat()
 
 
 def _build_cards(items: list[tuple[str, Any, str | None]]) -> list[dict[str, Any]]:
@@ -34,9 +40,28 @@ def _build_table(title: str, columns: list[str], rows: list[list[Any]]) -> dict[
 def _comparison_range_for_route(route: dict[str, Any], message: str) -> str | None:
     if route.get("compare_to"):
         return str(route["compare_to"])
-    if route.get("intent") == "production_summary" and route.get("time_range") == "today":
+    if route.get("intent") == "production_summary" and route.get("time_range") == "today" and "production" in str(route.get("matched_rule", "")):
         return "yesterday"
     return None
+
+
+def _git_value(*args: str) -> str | None:
+    try:
+        return subprocess.check_output(["git", *args], text=True, stderr=subprocess.DEVNULL).strip() or None
+    except Exception:
+        return None
+
+
+def _assistant_version_payload() -> dict[str, Any]:
+    return {
+        "ok": True,
+        "service": "bbg-assistant",
+        "raw_route_supported": True,
+        "started_at": SERVICE_STARTED_AT,
+        "process_id": os.getpid(),
+        "git_commit": _git_value("rev-parse", "HEAD"),
+        "git_branch": _git_value("branch", "--show-current"),
+    }
 
 
 def _resolve_matching_tags(route: dict[str, Any], message: str, limit: int = 50) -> list[dict[str, Any]]:
@@ -101,6 +126,8 @@ def _deterministic_answer(intent: str, raw: dict[str, Any]) -> str:
 
     if intent == "production_summary":
         answer = f"{raw['range']['label']} so far: good bags {raw['good_bags']}, bad bags {raw['bad_bags']}, total bags {raw['total_bags']}, bad rate {raw['bad_rate_pct']}%."
+        if raw.get("total_counter_bags") is not None:
+            answer += f" Total counter {raw['total_counter_bags']}."
         comparison = raw.get("comparison")
         if comparison and not comparison.get("error") and "delta_total_bags" in comparison and "delta_bad_rate_pct" in comparison:
             answer += (
@@ -133,6 +160,9 @@ def _deterministic_answer(intent: str, raw: dict[str, Any]) -> str:
     if intent == "most_changed_parameters":
         top = raw.get("parameters") or []
         if not top:
+            context = raw.get("context", {})
+            if context.get("machine_speed"):
+                return "After filtering counters, alarms, PLC/IO, zero-range values, and the speed marker itself, I did not find other process variables that changed enough in the selected range."
             return "No visible process parameter movement was found for that range after applying the default filters."
         labels = ", ".join(item["label"] for item in top[:3])
         prefix = f"In {raw['section']}, " if raw.get("section") else ""
@@ -142,7 +172,12 @@ def _deterministic_answer(intent: str, raw: dict[str, Any]) -> str:
         after = raw.get("after_stop_effect") or []
         before = raw.get("before_stop_movement") or []
         if not after and not before:
-            return "No changed numeric process tags were found in the window around the last stop."
+            suffix = " The last stop is still open." if raw.get("context", {}).get("stop_is_open_ended") else ""
+            stop_time = raw.get("stop_time") or "the detected stop time"
+            return (
+                f"The machine speed dropped to zero at {stop_time}. After filtering counters, alarms, PLC/IO, zero-range values, and the speed marker itself, "
+                f"I did not find other process variables that changed enough in the selected window.{suffix}"
+            )
         after_label = after[0]["label"] if after else "n/a"
         before_label = before[0]["label"] if before else "n/a"
         suffix = " The last stop is still open." if raw.get("context", {}).get("stop_is_open_ended") else ""
@@ -152,7 +187,12 @@ def _deterministic_answer(intent: str, raw: dict[str, Any]) -> str:
         top = raw.get("most_changed", {}).get("parameters") or []
         section_label = raw.get("section_label") or raw.get("section") or "the requested section"
         prefix = "For sections" if "," in str(section_label) else "For"
-        return f"{prefix} {section_label}, the most changed parameters were {', '.join(item['label'] for item in top[:3]) or 'not enough data'}."
+        if top:
+            return f"{prefix} {section_label}, the most changed parameters were {', '.join(item['label'] for item in top[:3])}."
+        excluded = raw.get("most_changed", {}).get("excluded_counts") or {}
+        if excluded.get("zero_range", 0) > 0:
+            return f"{prefix} {section_label}, I found matching tags, but they did not change in the selected range."
+        return f"{prefix} {section_label}, I found matching tags, but no visible process variables remained after filtering."
 
     return (
         "I was not confident enough to choose an analysis automatically. "
@@ -212,6 +252,7 @@ def _format_production_response(raw: dict[str, Any]) -> tuple[list[dict[str, Any
             ("Good Bags", raw["good_bags"], None),
             ("Bad Bags", raw["bad_bags"], None),
             ("Total Bags", raw["total_bags"], None),
+            *([("Total Counter", raw["total_counter_bags"], None)] if raw.get("total_counter_bags") is not None else []),
             ("Bad Rate", raw["bad_rate_pct"], "%"),
         ]
     )
@@ -303,8 +344,8 @@ def _format_most_changed_response(raw: dict[str, Any]) -> tuple[list[dict[str, A
     tables.append(
         _build_table(
             "Excluded Rows",
-            ["Excluded Section", "Excluded Tag Term", "Zero Range"],
-            [[excluded.get("excluded_section", 0), excluded.get("excluded_tag_term", 0), excluded.get("zero_range", 0)]],
+            ["Excluded Section", "Excluded Tag Term", "Zero Range", "Machine Speed Context"],
+            [[excluded.get("excluded_section", 0), excluded.get("excluded_tag_term", 0), excluded.get("zero_range", 0), excluded.get("machine_speed_context", 0)]],
         )
     )
     return cards, tables
@@ -356,8 +397,8 @@ def _format_around_stop_response(raw: dict[str, Any]) -> tuple[list[dict[str, An
     tables.append(
         _build_table(
             "Excluded Rows",
-            ["Excluded Section", "Excluded Tag Term", "Zero Range"],
-            [[excluded.get("excluded_section", 0), excluded.get("excluded_tag_term", 0), excluded.get("zero_range", 0)]],
+            ["Excluded Section", "Excluded Tag Term", "Zero Range", "Machine Speed Context"],
+            [[excluded.get("excluded_section", 0), excluded.get("excluded_tag_term", 0), excluded.get("zero_range", 0), excluded.get("machine_speed_context", 0)]],
         )
     )
     return cards, tables
@@ -379,8 +420,8 @@ def _format_section_response(raw: dict[str, Any]) -> tuple[list[dict[str, Any]],
     tables.append(
         _build_table(
             "Excluded Rows",
-            ["Excluded Section", "Excluded Tag Term", "Zero Range"],
-            [[excluded.get("excluded_section", 0), excluded.get("excluded_tag_term", 0), excluded.get("zero_range", 0)]],
+            ["Excluded Section", "Excluded Tag Term", "Zero Range", "Machine Speed Context"],
+            [[excluded.get("excluded_section", 0), excluded.get("excluded_tag_term", 0), excluded.get("zero_range", 0), excluded.get("machine_speed_context", 0)]],
         )
     )
     return cards, tables
@@ -409,6 +450,7 @@ def handle_assistant_chat(message: str, time_range: str | None = None, conversat
     range_key = str(route["time_range"])
     selected_range = parse_time_range(range_key)
     explicit_system_request = _is_explicit_system_request(message, route.get("resolved_system"))
+    explicit_speed_request = _is_explicit_speed_request(message)
     raw: dict[str, Any]
 
     if intent == "production_summary":
@@ -430,6 +472,7 @@ def handle_assistant_chat(message: str, time_range: str | None = None, conversat
             allowed_tag_ids=[int(item["tag_id"]) for item in matching_tags] if matching_tags else None,
             apply_process_filters=not explicit_system_request,
             explicit_system_request=explicit_system_request,
+            include_speed_in_ranking=explicit_speed_request,
         )
         if route.get("resolved_system"):
             raw["section"] = route.get("resolved_system")
@@ -475,6 +518,7 @@ def handle_assistant_chat(message: str, time_range: str | None = None, conversat
                 allowed_tag_ids=allowed_tag_ids or None,
                 apply_process_filters=not explicit_system_request,
                 explicit_system_request=explicit_system_request,
+                include_speed_in_ranking=explicit_speed_request,
             ),
         }
         cards, tables = _format_section_response(raw)
@@ -495,7 +539,9 @@ def handle_assistant_chat(message: str, time_range: str | None = None, conversat
 
 
 def get_assistant_diagnostics_response() -> dict[str, Any]:
-    return get_assistant_diagnostics()
+    diagnostics = get_assistant_diagnostics()
+    diagnostics["version"] = _assistant_version_payload()
+    return diagnostics
 
 
 def get_production_debug_response(time_range: str | None = None) -> dict[str, Any]:
@@ -504,3 +550,7 @@ def get_production_debug_response(time_range: str | None = None) -> dict[str, An
 
 def get_production_candidates_response(time_range: str | None = None, limit: int = 50) -> dict[str, Any]:
     return get_production_candidates(parse_time_range(time_range or "today"), limit=limit)
+
+
+def get_assistant_version_response() -> dict[str, Any]:
+    return _assistant_version_payload()

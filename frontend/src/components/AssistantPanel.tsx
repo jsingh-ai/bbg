@@ -28,6 +28,7 @@ function AssistantPanel({ enabled }: AssistantPanelProps) {
   const [message, setMessage] = useState('');
   const [messages, setMessages] = useState<ChatEntry[]>([]);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [showProductionCandidates, setShowProductionCandidates] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const conversationId = useMemo(() => `assistant-${Date.now()}`, []);
 
@@ -47,6 +48,13 @@ function AssistantPanel({ enabled }: AssistantPanelProps) {
     queryKey: ['assistant-diagnostics'],
     queryFn: api.getAssistantDiagnostics,
     enabled: expanded && showDiagnostics,
+    staleTime: 60_000
+  });
+
+  const productionCandidatesQuery = useQuery({
+    queryKey: ['assistant-production-candidates'],
+    queryFn: () => api.getAssistantProductionCandidates('today', 12),
+    enabled: expanded && showProductionCandidates,
     staleTime: 60_000
   });
 
@@ -86,6 +94,9 @@ function AssistantPanel({ enabled }: AssistantPanelProps) {
           <div className="assistant-toolbar">
             <button className="secondary-button small-button" onClick={() => setShowDiagnostics((prev) => !prev)}>
               <SearchCheck size={14} /> {showDiagnostics ? 'Hide Diagnostics' : 'Check Setup'}
+            </button>
+            <button className="secondary-button small-button" onClick={() => setShowProductionCandidates((prev) => !prev)}>
+              {showProductionCandidates ? 'Hide Production Candidates' : 'Production Candidates'}
             </button>
           </div>
 
@@ -163,6 +174,46 @@ function AssistantPanel({ enabled }: AssistantPanelProps) {
                     );
                   })}
                 </>
+              )}
+            </div>
+          )}
+
+          {showProductionCandidates && (
+            <div className="assistant-diagnostics">
+              {productionCandidatesQuery.isLoading && <div className="assistant-empty">Loading production candidates...</div>}
+              {productionCandidatesQuery.isError && <div className="error-banner">{(productionCandidatesQuery.error as Error).message}</div>}
+              {productionCandidatesQuery.data && (
+                <div className="assistant-diagnostics-block">
+                  <h3>Production Candidates</h3>
+                  <div className="table-scroll">
+                    <table className="data-table assistant-table">
+                      <thead>
+                        <tr>
+                          <th>Label</th>
+                          <th>Section</th>
+                          <th>Delta</th>
+                          <th>Raw Delta</th>
+                          <th>First</th>
+                          <th>Last</th>
+                          <th>OPC Path</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {productionCandidatesQuery.data.candidates.map((candidate) => (
+                          <tr key={`production-candidate-${candidate.tag_id}`}>
+                            <td>{candidate.label}</td>
+                            <td>{candidate.section_key ?? '--'}</td>
+                            <td>{candidate.delta_sum}</td>
+                            <td>{candidate.raw_delta}</td>
+                            <td>{candidate.first_value ?? '--'}</td>
+                            <td>{candidate.last_value ?? '--'}</td>
+                            <td>{candidate.opc_path}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               )}
             </div>
           )}

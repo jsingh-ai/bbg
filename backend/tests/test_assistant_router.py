@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 
 from app.services.assistant_router import route_assistant_message
+from app.services.process_analysis import should_exclude_section
 
 
 class AssistantRouterTests(unittest.TestCase):
@@ -53,6 +54,27 @@ class AssistantRouterTests(unittest.TestCase):
         self.assertIn(route["intent"], {"section_summary", "most_changed_parameters"})
         self.assertEqual(route["resolved_system"], "plc/io/system")
         self.assertIn("i", route["section_terms"])
+
+    def test_active_alarms(self) -> None:
+        route = route_assistant_message("Show active alarms")
+        self.assertEqual(route["intent"], "section_summary")
+        self.assertEqual(route["resolved_system"], "alarm/system")
+        self.assertIn("alarm system", route["section_terms"])
+
+    def test_exclude_exact_i_section(self) -> None:
+        self.assertTrue(should_exclude_section("i", ["i"]))
+
+    def test_do_not_exclude_unwinder_for_i_term(self) -> None:
+        self.assertFalse(should_exclude_section("020 - unwinder", ["i"]))
+
+    def test_do_not_exclude_storage_cylinder_for_i_term(self) -> None:
+        self.assertFalse(should_exclude_section("290 - storage cylinder", ["i"]))
+
+    def test_do_not_exclude_bottom_sealing_for_i_term(self) -> None:
+        self.assertFalse(should_exclude_section("360 - bottom sealing", ["i"]))
+
+    def test_do_not_exclude_general_i16_for_i_term(self) -> None:
+        self.assertFalse(should_exclude_section("A00-I16 - general", ["i"]))
 
 
 if __name__ == "__main__":

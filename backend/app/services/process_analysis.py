@@ -161,14 +161,62 @@ def _production_warnings(good_bags: float, bad_bags: float, total_bags: float, b
 
 
 def _is_explicit_system_request(message: str | None = None, resolved_system: str | None = None) -> bool:
-    if resolved_system == "plc/io/system":
+    if resolved_system in {"plc/io/system", "alarm/system"}:
         return True
     normalized = (message or "").lower()
     return any(term in normalized for term in SYSTEM_EXEMPT_TERMS)
 
 
+def _is_explicit_speed_request(message: str | None = None) -> bool:
+    normalized = normalize_key(message or "")
+    return any(
+        term in normalized
+        for term in (
+            "speed",
+            "stops",
+            "stop",
+            "downtime",
+            "machinestate",
+            "runningstate",
+            "machineisrunning",
+            "machineisstopped",
+        )
+    )
+
+
 def _excluded_counts() -> dict[str, int]:
-    return {"excluded_section": 0, "excluded_tag_term": 0, "zero_range": 0}
+    return {"excluded_section": 0, "excluded_tag_term": 0, "zero_range": 0, "machine_speed_context": 0}
+
+
+def should_exclude_section(section_key: str, terms: list[str]) -> bool:
+    normalized_section = section_key.lower().strip()
+    if not normalized_section:
+        return False
+    for term in terms:
+        normalized_term = str(term).lower().strip()
+        if not normalized_term:
+            continue
+        if len(normalized_term) <= 2:
+            if normalized_section == normalized_term:
+                return True
+            continue
+        if normalized_section == normalized_term or normalized_term in normalized_section:
+            return True
+    return False
+
+
+def _speed_context_row(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "tag_id": item.get("tag_id"),
+        "opc_path": item.get("opc_path"),
+        "section_key": item.get("section_key"),
+        "label": item.get("label"),
+        "min": item.get("min_value"),
+        "max": item.get("max_value"),
+        "avg": item.get("avg_value"),
+        "range": item.get("range_value"),
+        "sample_count": item.get("sample_count"),
+    }
 
 
 def _filter_process_row(
@@ -188,7 +236,7 @@ def _filter_process_row(
     opc_path = str(row.get("opc_path") or "").lower()
     label = str(row.get("label") or row.get("display_name") or row.get("browse_name") or "").lower()
     blob = " ".join(part for part in (section_key, opc_path, label) if part)
-    if any(term and term in section_key for term in settings.assistant_excluded_section_key_list):
+    if should_exclude_section(section_key, settings.assistant_excluded_section_key_list):
         return "excluded_section"
     if any(term and term in opc_path for term in settings.assistant_excluded_path_contains_list):
         return "excluded_section"
@@ -342,6 +390,8 @@ def get_assistant_diagnostics() -> dict[str, Any]:
         "speed_tag_path": settings.assistant_speed_tag_path,
         "good_bags_tag_path": settings.assistant_good_bags_tag_path,
         "bad_bags_tag_path": settings.assistant_bad_bags_tag_path,
+        "total_bags_tag_path": settings.assistant_total_bags_tag_path,
+        "production_mode": settings.assistant_production_mode,
         "running_speed_threshold": settings.assistant_running_speed_threshold,
         "min_stop_minutes": settings.assistant_min_stop_minutes,
         "max_rows": settings.assistant_max_rows,
@@ -505,6 +555,7 @@ def get_production_summary(time_range: TimeRange, compare_to: TimeRange | None =
     settings = _settings()
     good_resolution = resolve_configured_tag(settings.assistant_good_bags_tag_path, ["good", "bags", "shift good"])
     bad_resolution = resolve_configured_tag(settings.assistant_bad_bags_tag_path, ["bad", "bags", "shift bad"])
+    total_resolution = resolve_configured_tag(settings.assistant_total_bags_tag_path, ["endless counter", "total", "bags", "package"])
 
     if not good_resolution["found"] or not bad_resolution["found"]:
         return {
@@ -524,6 +575,16 @@ def get_production_summary(time_range: TimeRange, compare_to: TimeRange | None =
     bad_tag = bad_resolution["tag"]
     good_rows = _fetch_numeric_series(int(good_tag["tag_id"]), time_range.start, time_range.end, max_rows=settings.assistant_max_rows)
     bad_rows = _fetch_numeric_series(int(bad_tag["tag_id"]), time_range.start, time_range.end, max_rows=settings.assistant_max_rows)
+    total_counter_bags = None
+    total_counter_tag = None
+    if total_resolution["found"] and total_resolution["tag"]:
+        total_counter_tag = {
+            "tag_id": int(total_resolution["tag"]["tag_id"]),
+            "label": display_name(total_resolution["tag"]),
+            "opc_path": total_resolution["tag"].get("opc_path"),
+        }
+        total_rows = _fetch_numeric_series(int(total_resolution["tag"]["tag_id"]), time_range.start, time_range.end, max_rows=settings.assistant_max_rows)
+        total_counter_bags = round(_counter_delta(total_rows), 3)
 
     timestamps = [row.get("created_at") for row in [*good_rows, *bad_rows] if row.get("created_at") is not None]
     if not timestamps:
@@ -537,6 +598,9 @@ def get_production_summary(time_range: TimeRange, compare_to: TimeRange | None =
             "good_bags": 0,
             "bad_bags": 0,
             "total_bags": 0,
+            "total_counter_bags": total_counter_bags,
+            "total_counter_tag": total_counter_tag,
+            "production_mode": settings.assistant_production_mode,
             "bad_rate_pct": 0.0,
             "first_timestamp": None,
             "last_timestamp": None,
@@ -546,6 +610,9 @@ def get_production_summary(time_range: TimeRange, compare_to: TimeRange | None =
         "range": _range_dict(time_range),
         "good_bags": round(_counter_delta(good_rows), 3),
         "bad_bags": round(_counter_delta(bad_rows), 3),
+        "total_counter_bags": total_counter_bags,
+        "total_counter_tag": total_counter_tag,
+        "production_mode": settings.assistant_production_mode,
         "first_timestamp": _as_iso(min(timestamps)),
         "last_timestamp": _as_iso(max(timestamps)),
     }
@@ -577,6 +644,7 @@ def get_production_debug(time_range: TimeRange) -> dict[str, Any]:
     warnings: list[str] = []
     good_resolution = resolve_configured_tag(settings.assistant_good_bags_tag_path, ["good", "bags", "shift good"])
     bad_resolution = resolve_configured_tag(settings.assistant_bad_bags_tag_path, ["bad", "bags", "shift bad"])
+    total_resolution = resolve_configured_tag(settings.assistant_total_bags_tag_path, ["endless counter", "total", "bags", "package"])
 
     def debug_for_resolution(resolution: dict[str, Any], fallback_key: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         if not resolution["found"] or not resolution["tag"]:
@@ -594,8 +662,10 @@ def get_production_debug(time_range: TimeRange) -> dict[str, Any]:
 
     good_tag, good_rows = debug_for_resolution(good_resolution, "good")
     bad_tag, bad_rows = debug_for_resolution(bad_resolution, "bad")
+    total_tag, total_rows = debug_for_resolution(total_resolution, "total")
     good_stats = _counter_stats(good_rows)
     bad_stats = _counter_stats(bad_rows)
+    total_stats = _counter_stats(total_rows)
     good_delta = float(good_stats.get("delta_sum") or 0.0)
     bad_delta = float(bad_stats.get("delta_sum") or 0.0)
     total_delta = good_delta + bad_delta
@@ -605,8 +675,11 @@ def get_production_debug(time_range: TimeRange) -> dict[str, Any]:
         "range": _range_dict(time_range),
         "good_tag": good_tag,
         "bad_tag": bad_tag,
+        "total_tag": total_tag,
         "good_samples": good_stats,
         "bad_samples": bad_stats,
+        "total_samples": total_stats,
+        "production_mode": settings.assistant_production_mode,
         "warnings": warnings,
     }
 
@@ -771,8 +844,11 @@ def get_most_changed_parameters(
     apply_process_filters: bool = True,
     explicit_system_request: bool = False,
     keep_tag_ids: list[int] | None = None,
+    include_speed_in_ranking: bool = False,
 ) -> dict[str, Any]:
     settings = _settings()
+    speed_resolution = resolve_configured_tag(settings.assistant_speed_tag_path, ["speed", "machine speed", "format"])
+    speed_tag_id = int(speed_resolution["tag"]["tag_id"]) if speed_resolution.get("found") and speed_resolution.get("tag") else None
     section_sql, section_params = _section_filter_sql(section)
     allowed_sql = ""
     allowed_params: list[Any] = []
@@ -814,6 +890,7 @@ def get_most_changed_parameters(
     ranked: list[dict[str, Any]] = []
     excluded_counts = _excluded_counts()
     keep_tag_id_set = set(keep_tag_ids or [])
+    machine_speed_context: dict[str, Any] | None = None
     for row in rows:
         item = row_json_safe(row)
         min_value = float(row.get("min_value") or 0)
@@ -839,6 +916,10 @@ def get_most_changed_parameters(
         if exclusion_reason:
             excluded_counts[exclusion_reason] += 1
             continue
+        if speed_tag_id and int(item.get("tag_id") or 0) == speed_tag_id and not include_speed_in_ranking:
+            excluded_counts["machine_speed_context"] += 1
+            machine_speed_context = _speed_context_row(item)
+            continue
         if float(item["range_value"]) == 0:
             excluded_counts["zero_range"] += 1
             continue
@@ -849,6 +930,7 @@ def get_most_changed_parameters(
         "section": section,
         "parameters": ranked[: max(limit, 1)],
         "excluded_counts": excluded_counts,
+        "context": {"machine_speed": machine_speed_context} if machine_speed_context else {},
     }
 
 
@@ -874,6 +956,8 @@ def get_values_around_stop(
     context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     settings = _settings()
+    speed_resolution = resolve_configured_tag(settings.assistant_speed_tag_path, ["speed", "machine speed", "format"])
+    speed_tag_id = int(speed_resolution["tag"]["tag_id"]) if speed_resolution.get("found") and speed_resolution.get("tag") else None
     before_start = stop_time - timedelta(minutes=max(before_minutes, 1))
     after_end = stop_time + timedelta(minutes=max(after_minutes, 1))
     section_sql, section_params = _section_filter_sql(section)
@@ -927,6 +1011,7 @@ def get_values_around_stop(
     changes: list[dict[str, Any]] = []
     excluded_counts = _excluded_counts()
     keep_tag_id_set = set(keep_tag_ids or [])
+    machine_speed_context: dict[str, Any] | None = None
     for tag_rows in grouped.values():
         before = [row for row in tag_rows if row.get("created_at") and row["created_at"] < stop_time]
         after = [row for row in tag_rows if row.get("created_at") and row["created_at"] >= stop_time]
@@ -965,6 +1050,21 @@ def get_values_around_stop(
         if exclusion_reason:
             excluded_counts[exclusion_reason] += 1
             continue
+        if speed_tag_id and int(item.get("tag_id") or 0) == speed_tag_id:
+            excluded_counts["machine_speed_context"] += 1
+            machine_speed_context = {
+                "tag_id": item.get("tag_id"),
+                "opc_path": item.get("opc_path"),
+                "section_key": item.get("section_key"),
+                "label": item.get("label"),
+                "before_avg": item.get("before_avg"),
+                "after_avg": item.get("after_avg"),
+                "before_stop_movement": item.get("before_stop_movement"),
+                "after_stop_effect": item.get("after_stop_effect"),
+                "before_movement_score": item.get("before_movement_score"),
+                "after_effect_score": item.get("after_effect_score"),
+            }
+            continue
         if item["before_stop_movement"] == 0 and item["after_stop_effect"] == 0 and item["delta_avg"] == 0:
             excluded_counts["zero_range"] += 1
             continue
@@ -992,7 +1092,7 @@ def get_values_around_stop(
         "before_stop_movement": sorted(visible, key=lambda row: (row["before_movement_score"], abs(row["before_stop_movement"])), reverse=True)[: max(limit, 1)],
         "after_stop_effect": sorted(visible, key=lambda row: (row["after_effect_score"], abs(row["after_stop_effect"])), reverse=True)[: max(limit, 1)],
         "excluded_counts": excluded_counts,
-        "context": context or {},
+        "context": {**(context or {}), **({"machine_speed": machine_speed_context} if machine_speed_context else {})},
     }
 
 

@@ -39,6 +39,8 @@ class Settings(BaseSettings):
     assistant_speed_tag_path: str = "Global PV/200 - format/state/machine speed"
     assistant_good_bags_tag_path: str = "Global PV/info/state/shift: good"
     assistant_bad_bags_tag_path: str = "Global PV/info/state/shift: bad"
+    assistant_total_bags_tag_path: str = "Global PV/info/state/endless counter"
+    assistant_production_mode: str = "auto"
     assistant_running_speed_threshold: float = 0
     assistant_min_stop_minutes: int = 1
     assistant_excluded_section_keys: str = "i,alarm system"

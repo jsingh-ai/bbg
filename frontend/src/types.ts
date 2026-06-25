@@ -212,9 +212,14 @@ export interface AssistantDiagnosticsResponse {
     speed_tag_path: string;
     good_bags_tag_path: string;
     bad_bags_tag_path: string;
+    total_bags_tag_path?: string;
+    production_mode?: string;
     running_speed_threshold: number;
     min_stop_minutes: number;
     max_rows: number;
+    excluded_section_keys?: string[];
+    excluded_path_contains?: string[];
+    excluded_tag_terms?: string[];
   };
   database: {
     connected: boolean;
@@ -229,6 +234,65 @@ export interface AssistantDiagnosticsResponse {
     bad_bags: AssistantRequiredTagDiagnostic;
   };
   suggested_fixes: string[];
+  version?: AssistantVersionResponse;
+}
+
+export interface AssistantVersionResponse {
+  ok: boolean;
+  service: string;
+  raw_route_supported: boolean;
+  started_at: string;
+  process_id: number;
+  git_commit?: string | null;
+  git_branch?: string | null;
+}
+
+export interface AssistantProductionSampleStats {
+  first?: { timestamp: string; value: number } | null;
+  last?: { timestamp: string; value: number } | null;
+  delta_sum: number;
+  raw_delta: number;
+  reset_count: number;
+  sample_count: number;
+}
+
+export interface AssistantProductionTagInfo {
+  configured_path: string;
+  found: boolean;
+  tag_id?: number;
+  label?: string;
+  opc_path?: string | null;
+  suggestions?: AssistantTagSuggestion[];
+}
+
+export interface AssistantProductionDebugResponse {
+  range: Record<string, unknown>;
+  good_tag: AssistantProductionTagInfo;
+  bad_tag: AssistantProductionTagInfo;
+  total_tag?: AssistantProductionTagInfo;
+  good_samples: AssistantProductionSampleStats;
+  bad_samples: AssistantProductionSampleStats;
+  total_samples?: AssistantProductionSampleStats;
+  production_mode?: string;
+  warnings: string[];
+}
+
+export interface AssistantProductionCandidate {
+  tag_id: number;
+  label: string;
+  opc_path: string;
+  section_key?: string | null;
+  first_value?: number | null;
+  last_value?: number | null;
+  delta_sum: number;
+  raw_delta: number;
+  reset_count: number;
+  sample_count: number;
+}
+
+export interface AssistantProductionCandidatesResponse {
+  range: Record<string, unknown>;
+  candidates: AssistantProductionCandidate[];
 }
 
 export interface SavedHistoryVariable {

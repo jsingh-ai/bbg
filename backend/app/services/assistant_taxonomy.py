@@ -56,6 +56,7 @@ SYSTEM_RULES: tuple[SystemRule, ...] = (
     SystemRule("main draw", ("main draw", "draw"), ("main draw",)),
     SystemRule("base frame", ("base frame",), ("base frame",)),
     SystemRule("general air", ("air pressure", "air flow", "air"), ("general",)),
+    SystemRule("alarm/system", ("active alarms", "max severity", "warnings", "warning", "faults", "fault", "alarms", "alarm"), ("alarm system",)),
     SystemRule("plc/io/system", ("plc temperature", "system health", "i/o", "plc", "io"), ("i",)),
 )
 

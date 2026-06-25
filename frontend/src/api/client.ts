@@ -2,6 +2,8 @@ import type {
   AssistantChatRequest,
   AssistantChatResponse,
   AssistantDiagnosticsResponse,
+  AssistantProductionCandidatesResponse,
+  AssistantProductionDebugResponse,
   ActiveRecipe,
   AlertEvent,
   AppConfig,
@@ -97,5 +99,11 @@ export const api = {
     }),
   assistantChat: (payload: AssistantChatRequest) =>
     request<AssistantChatResponse>('/api/assistant/chat', { method: 'POST', body: JSON.stringify(payload) }),
-  getAssistantDiagnostics: () => request<AssistantDiagnosticsResponse>('/api/assistant/diagnostics')
+  getAssistantDiagnostics: () => request<AssistantDiagnosticsResponse>('/api/assistant/diagnostics'),
+  getAssistantProductionDebug: (timeRange = 'today') =>
+    request<AssistantProductionDebugResponse>(`/api/assistant/production-debug?time_range=${encodeURIComponent(timeRange)}`),
+  getAssistantProductionCandidates: (timeRange = 'today', limit = 25) =>
+    request<AssistantProductionCandidatesResponse>(
+      `/api/assistant/production-candidates?time_range=${encodeURIComponent(timeRange)}&limit=${limit}`
+    )
 };

@@ -19,6 +19,7 @@ It can answer questions such as:
 - The assistant is read-only.
 - It only uses `SELECT` queries.
 - It does not write to MySQL.
+- Codex should not run tests, builds, or runtime validation commands for this feature set because verification happens on the deployed VM.
 - It does not acknowledge alerts.
 - It does not edit recipes, layouts, sections, or tag visibility.
 - It does not expose `OPENAI_API_KEY` to the frontend.
@@ -35,6 +36,8 @@ ASSISTANT_DEFAULT_TIMEZONE=America/Chicago
 ASSISTANT_SPEED_TAG_PATH=Global PV/200 - format/state/machine speed
 ASSISTANT_GOOD_BAGS_TAG_PATH=Global PV/info/state/shift: good
 ASSISTANT_BAD_BAGS_TAG_PATH=Global PV/info/state/shift: bad
+ASSISTANT_TOTAL_BAGS_TAG_PATH=Global PV/info/state/endless counter
+ASSISTANT_PRODUCTION_MODE=auto
 ASSISTANT_RUNNING_SPEED_THRESHOLD=0
 ASSISTANT_MIN_STOP_MINUTES=1
 ASSISTANT_MAX_ROWS=5000
@@ -73,6 +76,14 @@ The response shows:
 - compact suggestions when a configured tag path does not match a real tag
 
 Chat responses also include `raw.route`, which shows the deterministic router decision, resolved system, section terms, time range, and matched rule.
+
+The assistant service also exposes:
+
+```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/assistant/version" | ConvertTo-Json -Depth 20
+```
+
+That route returns backend JSON metadata such as `raw_route_supported`, `started_at`, `process_id`, and best-effort git commit/branch information.
 
 ### Missing Tag Warnings
 
@@ -119,6 +130,12 @@ ASSISTANT_EXCLUDED_PATH_CONTAINS=/i/o/,alarm system
 ASSISTANT_EXCLUDED_TAG_TERMS=counter,count,number of,good,bad,total,shift,job,active alarms,max severity,storageWear
 ```
 
+Short excluded section keys are matched safely:
+
+- if the excluded term is 1-2 characters long, it must match the full normalized section key exactly
+- example: `i` excludes only section key `i`
+- it does not exclude `020 - unwinder`, `290 - storage cylinder`, `360 - bottom sealing`, or `A00-I16 - general`
+
 These filters apply to:
 
 - most changed parameter analysis
@@ -132,9 +149,18 @@ They do not apply to:
 - production candidates
 - explicit PLC / I/O / system-health style questions
 
+Machine speed is treated as context-only by default for general process ranking. It can still appear as stop context, but it is removed from the visible ranked process-variable lists unless the user explicitly asks about speed, stops, downtime, or machine state.
+
 ## Production Calculation
 
 Production uses the configured good/bad counter tags from `opc_tag_values`.
+
+Optional total-counter support:
+
+- `ASSISTANT_TOTAL_BAGS_TAG_PATH`
+- `ASSISTANT_PRODUCTION_MODE=auto`
+
+When good/bad semantics look suspicious, the assistant still shows those values with warnings but can also show a `Total Counter` card from the configured total-production counter.
 
 Method:
 
@@ -175,8 +201,11 @@ Use that endpoint to tune:
 
 - `ASSISTANT_GOOD_BAGS_TAG_PATH`
 - `ASSISTANT_BAD_BAGS_TAG_PATH`
+- `ASSISTANT_TOTAL_BAGS_TAG_PATH`
 
 If bad delta is much larger than good delta or the bad rate is extremely high, the assistant now returns sanity warnings so you can verify the configured production counters.
+
+The Assistant panel also includes a compact `Production Candidates` section that calls `/api/assistant/production-candidates` and shows candidate labels, sections, deltas, and OPC paths.
 
 Diagnostics suggestions are not automatically used for calculations. This is intentional so production and downtime analytics never silently switch to the wrong OPC tag.
 
@@ -256,8 +285,14 @@ To avoid ranking obvious production counters as unstable process parameters, Pha
 
 ## PowerShell Test Commands
 
+These are for VM validation only.
+
 ```powershell
 Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/assistant/diagnostics" | ConvertTo-Json -Depth 20
+```
+
+```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/assistant/version" | ConvertTo-Json -Depth 20
 ```
 
 ```powershell
