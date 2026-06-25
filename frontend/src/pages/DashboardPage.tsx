@@ -122,6 +122,9 @@ function DashboardPage({ machineId, refreshSeconds, assistantEnabled }: Dashboar
         <div className="dashboard-summary-row">
           <DashboardSummary machineId={machineId} summary={summaryQuery.data} />
         </div>
+        <div className="dashboard-assistant-row">
+          <AssistantPanel enabled={assistantEnabled} />
+        </div>
         <div className="dashboard-map-row">
           <MachineMap
             machine={machine}
@@ -151,9 +154,6 @@ function DashboardPage({ machineId, refreshSeconds, assistantEnabled }: Dashboar
             onRemoveSavedVariable={handleRemoveSavedVariable}
             onClearSavedVariables={handleClearSavedVariables}
           />
-        </div>
-        <div className="dashboard-assistant-row">
-          <AssistantPanel enabled={assistantEnabled} />
         </div>
       </div>
     </div>
