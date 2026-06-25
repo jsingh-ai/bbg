@@ -74,13 +74,15 @@ function App() {
 
         <nav className="sidebar-nav">
           {navItems.map((item) => (
-            <button
-              className={page === item.key ? 'nav-item active' : 'nav-item'}
-              key={item.key}
-              onClick={() => setPage(item.key)}
-            >
-              {item.icon}
-              {!sidebarCollapsed && <span>{item.label}</span>}
+              <button
+                className={page === item.key ? 'nav-item active' : 'nav-item'}
+                key={item.key}
+                onClick={() => setPage(item.key)}
+                title={sidebarCollapsed ? item.label : undefined}
+                aria-label={item.label}
+              >
+                {item.icon}
+                {!sidebarCollapsed && <span>{item.label}</span>}
             </button>
           ))}
         </nav>

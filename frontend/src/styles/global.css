@@ -68,6 +68,7 @@ button { cursor: pointer; }
   display: flex;
   align-items: center;
   gap: 12px;
+  transition: transform 140ms ease, opacity 160ms ease;
 }
 .sidebar.collapsed .brand-block { justify-content: center; }
 .brand-icon {
@@ -91,8 +92,14 @@ button { cursor: pointer; }
   color: var(--text);
   display: inline-grid;
   place-items: center;
+  transition: transform 120ms ease, background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
 }
-.sidebar-toggle:hover { background: rgba(96, 165, 250, 0.14); }
+.sidebar-toggle:hover {
+  transform: translateY(-1px);
+  background: rgba(96, 165, 250, 0.14);
+  border-color: rgba(96, 165, 250, 0.34);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.16);
+}
 
 .machine-picker {
   display: flex;
@@ -102,6 +109,12 @@ button { cursor: pointer; }
   border: 1px solid var(--line);
   border-radius: 16px;
   background: rgba(15, 23, 42, 0.8);
+  transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
+}
+.machine-picker:hover {
+  border-color: rgba(96, 165, 250, 0.26);
+  background: rgba(15, 23, 42, 0.92);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.14);
 }
 .machine-picker label { color: var(--muted); font-size: 0.82rem; }
 select, input, textarea {
@@ -127,6 +140,7 @@ select:focus, input:focus, textarea:focus { border-color: rgba(96, 165, 250, 0.8
   align-items: center;
   gap: 10px;
   text-align: left;
+  transition: transform 120ms ease, background-color 160ms ease, color 160ms ease, box-shadow 160ms ease;
 }
 .sidebar.collapsed .sidebar-nav { width: 100%; }
 .sidebar.collapsed .nav-item {
@@ -136,6 +150,10 @@ select:focus, input:focus, textarea:focus { border-color: rgba(96, 165, 250, 0.8
 .nav-item:hover, .nav-item.active {
   background: rgba(96, 165, 250, 0.12);
   color: var(--text);
+}
+.nav-item:hover {
+  transform: translateX(2px);
+  box-shadow: inset 0 0 0 1px rgba(96, 165, 250, 0.12);
 }
 .sidebar-footer {
   margin-top: auto;
