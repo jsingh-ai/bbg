@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Any
 
 from fastapi import HTTPException
@@ -48,7 +48,7 @@ def get_machine(machine_id: int) -> dict[str, Any]:
 
 def get_dashboard_summary(machine_id: int, minutes: int | None = None) -> dict[str, Any]:
     history_minutes = minutes or 60
-    start = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=history_minutes)
+    start = datetime.now() - timedelta(minutes=history_minutes)
 
     requested_paths = [SPEED_PATH]
     for mode in ("shift", "job", "total"):
@@ -454,6 +454,6 @@ def get_history(machine_id: int, section_key: str | None, start: datetime, end: 
 
 def default_history_range() -> tuple[datetime, datetime]:
     settings = get_settings()
-    end = datetime.now(timezone.utc).replace(tzinfo=None)
+    end = datetime.now()
     start = end - timedelta(minutes=settings.default_history_minutes)
     return start, end
