@@ -42,7 +42,7 @@ function ValueRows({
       <table className="value-table">
         <thead>
           <tr>
-            <th className="action-col">Show</th>
+            <th className="action-col" aria-label="Show toggle column"></th>
             <th>Display Name</th>
             <th>Current Value</th>
             <th className="action-col">Save</th>
