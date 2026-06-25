@@ -308,7 +308,8 @@ p { color: var(--muted); margin-bottom: 0; }
 }
 .dashboard-summary-row,
 .dashboard-map-row,
-.dashboard-history-row {
+.dashboard-history-row,
+.dashboard-assistant-row {
   min-width: 0;
 }
 .dashboard-summary-grid {
@@ -603,6 +604,162 @@ p { color: var(--muted); margin-bottom: 0; }
   gap: 16px;
   align-items: start;
   min-width: 0;
+}
+.assistant-panel {
+  padding: 18px;
+}
+.assistant-header {
+  align-items: flex-start;
+}
+.assistant-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.72);
+}
+.assistant-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 14px;
+}
+.assistant-diagnostics {
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(15, 23, 42, 0.55);
+  padding: 14px;
+  margin-bottom: 16px;
+}
+.assistant-diagnostics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+}
+.assistant-diagnostics-block {
+  margin-top: 14px;
+}
+.assistant-fix-list {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  color: var(--muted);
+}
+.assistant-fix-list li + li {
+  margin-top: 6px;
+}
+.assistant-starters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.assistant-starter {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.78);
+  color: var(--text);
+  padding: 8px 12px;
+  transition: transform 120ms ease, background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+.assistant-starter:hover:not(:disabled) {
+  transform: translateY(-1px);
+  background: rgba(56, 189, 248, 0.12);
+  border-color: rgba(56, 189, 248, 0.3);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.18);
+}
+.assistant-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 180px;
+  max-height: 680px;
+  overflow: auto;
+  padding-right: 4px;
+}
+.assistant-empty {
+  border: 1px dashed var(--line);
+  border-radius: 16px;
+  padding: 18px;
+  color: var(--muted);
+  background: rgba(15, 23, 42, 0.4);
+}
+.assistant-message {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+.assistant-message-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  background: rgba(15, 23, 42, 0.82);
+  color: var(--accent-2);
+}
+.assistant-message.user .assistant-message-icon {
+  color: #f8fafc;
+  background: rgba(37, 99, 235, 0.22);
+}
+.assistant-message-body {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.78);
+  padding: 14px 16px;
+}
+.assistant-message-label {
+  font-size: 0.78rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 8px;
+}
+.assistant-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+.assistant-metric-card {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px;
+  background: rgba(11, 18, 32, 0.76);
+}
+.assistant-metric-card span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.78rem;
+  margin-bottom: 6px;
+}
+.assistant-metric-card strong {
+  font-size: 1.05rem;
+}
+.assistant-table-shell {
+  margin-top: 14px;
+}
+.assistant-table-shell h3 {
+  margin-bottom: 8px;
+}
+.assistant-table td,
+.assistant-table th {
+  white-space: nowrap;
+}
+.assistant-compose {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  margin-top: 16px;
+  align-items: end;
+}
+.assistant-compose textarea {
+  resize: vertical;
+  min-height: 84px;
 }
 
 .machine-image-wrap, .layout-image-wrap {
@@ -986,6 +1143,9 @@ p { color: var(--muted); margin-bottom: 0; }
     min-height: 340px;
   }
   .summary-uptime-layout {
+    grid-template-columns: 1fr;
+  }
+  .assistant-compose {
     grid-template-columns: 1fr;
   }
   .status-strip { grid-template-columns: 1fr; }

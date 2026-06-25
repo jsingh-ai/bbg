@@ -3,6 +3,7 @@ import { RefreshCcw } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api/client';
 import AlertPanel from '../components/AlertPanel';
+import AssistantPanel from '../components/AssistantPanel';
 import DashboardSummary from '../components/DashboardSummary';
 import HistoryChart from '../components/HistoryChart';
 import MachineMap from '../components/MachineMap';
@@ -13,9 +14,10 @@ import type { LiveValue, SavedHistoryVariable } from '../types';
 interface DashboardPageProps {
   machineId: number;
   refreshSeconds: number;
+  assistantEnabled: boolean;
 }
 
-function DashboardPage({ machineId, refreshSeconds }: DashboardPageProps) {
+function DashboardPage({ machineId, refreshSeconds, assistantEnabled }: DashboardPageProps) {
   const queryClient = useQueryClient();
   const [selectedSectionKey, setSelectedSectionKey] = useState<string | null>(null);
   const [numericValues, setNumericValues] = useState<LiveValue[]>([]);
@@ -149,6 +151,9 @@ function DashboardPage({ machineId, refreshSeconds }: DashboardPageProps) {
             onRemoveSavedVariable={handleRemoveSavedVariable}
             onClearSavedVariables={handleClearSavedVariables}
           />
+        </div>
+        <div className="dashboard-assistant-row">
+          <AssistantPanel enabled={assistantEnabled} />
         </div>
       </div>
     </div>

@@ -31,6 +31,16 @@ class Settings(BaseSettings):
     static_photo_dir: str = "opc_photos"
     live_refresh_seconds: int = 60
     default_history_minutes: int = 60
+    openai_api_key: str = ""
+    openai_model: str = "gpt-4.1-mini"
+    assistant_enabled: bool = False
+    assistant_max_rows: int = 5000
+    assistant_default_timezone: str = "America/Chicago"
+    assistant_speed_tag_path: str = "Global PV/200 - format/state/machine speed"
+    assistant_good_bags_tag_path: str = "Global PV/info/state/shift: good"
+    assistant_bad_bags_tag_path: str = "Global PV/info/state/shift: bad"
+    assistant_running_speed_threshold: float = 0
+    assistant_min_stop_minutes: int = 1
 
     cors_origins: str = Field(default="http://localhost:5173,http://127.0.0.1:5173")
 
@@ -50,6 +60,10 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [item.strip() for item in self.cors_origins.split(",") if item.strip()]
+
+    @property
+    def assistant_llm_enabled(self) -> bool:
+        return bool(self.assistant_enabled and self.openai_api_key.strip())
 
 
 @lru_cache

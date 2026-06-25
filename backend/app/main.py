@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .config import FRONTEND_DIST, STATIC_ROOT, get_settings
-from .routes import alerts, dashboard, machines, recipes
+from .routes import alerts, assistant, dashboard, machines, recipes
 
 settings = get_settings()
 
@@ -29,6 +29,7 @@ app.include_router(machines.router)
 app.include_router(dashboard.router)
 app.include_router(recipes.router)
 app.include_router(alerts.router)
+app.include_router(assistant.router)
 
 
 @app.get("/api/health")

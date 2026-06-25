@@ -1,4 +1,7 @@
 import type {
+  AssistantChatRequest,
+  AssistantChatResponse,
+  AssistantDiagnosticsResponse,
   ActiveRecipe,
   AlertEvent,
   AppConfig,
@@ -91,5 +94,8 @@ export const api = {
     request<AlertEvent>(`/api/alerts/${alertId}/acknowledge`, {
       method: 'POST',
       body: JSON.stringify({ acknowledged_by: acknowledgedBy, acknowledge_note: acknowledgeNote })
-    })
+    }),
+  assistantChat: (payload: AssistantChatRequest) =>
+    request<AssistantChatResponse>('/api/assistant/chat', { method: 'POST', body: JSON.stringify(payload) }),
+  getAssistantDiagnostics: () => request<AssistantDiagnosticsResponse>('/api/assistant/diagnostics')
 };

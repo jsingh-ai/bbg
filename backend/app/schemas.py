@@ -62,3 +62,9 @@ class HistoryRequest(BaseModel):
     start: datetime
     end: datetime
     tag_ids: list[int]
+
+
+class AssistantChatRequest(BaseModel):
+    message: str
+    time_range: str | None = None
+    conversation_id: str | None = None

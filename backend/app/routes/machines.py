@@ -18,6 +18,7 @@ def app_config() -> dict:
         "default_machine_id": settings.default_machine_id,
         "live_refresh_seconds": settings.live_refresh_seconds,
         "default_history_minutes": settings.default_history_minutes,
+        "assistant_enabled": settings.assistant_enabled,
     }
 
 

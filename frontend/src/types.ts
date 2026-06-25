@@ -5,6 +5,7 @@ export interface AppConfig {
   default_machine_id: number;
   live_refresh_seconds: number;
   default_history_minutes: number;
+  assistant_enabled: boolean;
 }
 
 export interface Machine {
@@ -157,6 +158,77 @@ export interface HistoryResponse {
   series: HistorySeries[];
   start?: string;
   end?: string;
+}
+
+export interface AssistantCard {
+  label: string;
+  value: string | number;
+  unit?: string;
+}
+
+export interface AssistantTable {
+  title: string;
+  columns: string[];
+  rows: Array<Array<string | number | boolean | null>>;
+}
+
+export interface AssistantChatRequest {
+  message: string;
+  time_range?: string;
+  conversation_id?: string;
+}
+
+export interface AssistantChatResponse {
+  answer: string;
+  intent: string;
+  conversation_id?: string | null;
+  cards: AssistantCard[];
+  tables: AssistantTable[];
+  raw: Record<string, unknown>;
+}
+
+export interface AssistantTagSuggestion {
+  tag_id: number;
+  label: string;
+  opc_path: string;
+}
+
+export interface AssistantRequiredTagDiagnostic {
+  configured_path: string;
+  found: boolean;
+  tag_id?: number;
+  label?: string;
+  last_sample_at?: string | null;
+  last_value?: string | number | null;
+  suggestions?: AssistantTagSuggestion[];
+}
+
+export interface AssistantDiagnosticsResponse {
+  ok: boolean;
+  assistant_enabled: boolean;
+  openai_configured: boolean;
+  timezone: string;
+  config: {
+    speed_tag_path: string;
+    good_bags_tag_path: string;
+    bad_bags_tag_path: string;
+    running_speed_threshold: number;
+    min_stop_minutes: number;
+    max_rows: number;
+  };
+  database: {
+    connected: boolean;
+    opc_tags_count: number | null;
+    opc_tag_values_count_estimate: number | null;
+    latest_history_timestamp: string | null;
+    oldest_history_timestamp: string | null;
+  };
+  required_tags: {
+    speed: AssistantRequiredTagDiagnostic;
+    good_bags: AssistantRequiredTagDiagnostic;
+    bad_bags: AssistantRequiredTagDiagnostic;
+  };
+  suggested_fixes: string[];
 }
 
 export interface SavedHistoryVariable {

@@ -96,7 +96,13 @@ function App() {
       </aside>
 
       <main className="main-content">
-        {page === 'dashboard' && <DashboardPage machineId={machineId} refreshSeconds={configQuery.data?.live_refresh_seconds ?? 60} />}
+        {page === 'dashboard' && (
+          <DashboardPage
+            machineId={machineId}
+            refreshSeconds={configQuery.data?.live_refresh_seconds ?? 60}
+            assistantEnabled={configQuery.data?.assistant_enabled ?? false}
+          />
+        )}
         {page === 'layout' && <LayoutEditorPage machineId={machineId} />}
         {page === 'recipes' && <RecipePage machineId={machineId} />}
         {page === 'alerts' && <AlertHistoryPage machineId={machineId} />}
