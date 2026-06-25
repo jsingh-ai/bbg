@@ -2,6 +2,7 @@ import type {
   ActiveRecipe,
   AlertEvent,
   AppConfig,
+  DashboardSummary,
   DashboardState,
   HistoryResponse,
   Machine,
@@ -39,6 +40,7 @@ export const api = {
   getConfig: () => request<AppConfig>('/api/config'),
   listMachines: () => request<Machine[]>('/api/machines'),
   getMachine: (machineId: number) => request<Machine>(`/api/machines/${machineId}`),
+  getSummary: (machineId: number) => request<DashboardSummary>(`/api/machines/${machineId}/summary`),
   syncMachine: (machineId: number) => request(`/api/machines/${machineId}/sync`, { method: 'POST' }),
   getDashboard: (machineId: number) => request<DashboardState>(`/api/machines/${machineId}/dashboard`),
   getSections: (machineId: number, includeHidden = true) =>

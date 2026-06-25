@@ -3,6 +3,7 @@ import { RefreshCcw } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api/client';
 import AlertPanel from '../components/AlertPanel';
+import DashboardSummary from '../components/DashboardSummary';
 import HistoryChart from '../components/HistoryChart';
 import MachineMap from '../components/MachineMap';
 import RecipeSelector from '../components/RecipeSelector';
@@ -24,6 +25,11 @@ function DashboardPage({ machineId, refreshSeconds }: DashboardPageProps) {
   const dashboardQuery = useQuery({
     queryKey: ['dashboard', machineId],
     queryFn: () => api.getDashboard(machineId),
+    refetchInterval: refreshMs
+  });
+  const summaryQuery = useQuery({
+    queryKey: ['summary', machineId],
+    queryFn: () => api.getSummary(machineId),
     refetchInterval: refreshMs
   });
 
@@ -88,7 +94,6 @@ function DashboardPage({ machineId, refreshSeconds }: DashboardPageProps) {
 
   const state = dashboardQuery.data;
   const machine = state?.machine;
-  const activeRecipe = state?.active_recipe;
   const sections = state?.sections ?? [];
   const alerts = state?.alerts ?? [];
 
@@ -107,16 +112,14 @@ function DashboardPage({ machineId, refreshSeconds }: DashboardPageProps) {
         </div>
       </header>
 
-      <div className="status-strip">
-        <div className="status-pill"><span>Selected Recipe</span><strong>{activeRecipe?.recipe_name ?? 'None'}</strong></div>
-        <div className="status-pill"><span>Open Alerts</span><strong>{alerts.length}</strong></div>
-        <div className="status-pill"><span>Mapped Sections</span><strong>{sections.filter((s) => s.has_box).length}</strong></div>
-        <div className="status-pill"><span>Selected Section</span><strong>{selectedSectionKey ?? 'None'}</strong></div>
-      </div>
-
-      {dashboardQuery.isError && <div className="error-banner">{(dashboardQuery.error as Error).message}</div>}
+      {(dashboardQuery.isError || summaryQuery.isError) && (
+        <div className="error-banner">{((dashboardQuery.error || summaryQuery.error) as Error).message}</div>
+      )}
 
       <div className="dashboard-grid">
+        <div className="dashboard-summary-row">
+          <DashboardSummary summary={summaryQuery.data} />
+        </div>
         <div className="dashboard-map-row">
           <MachineMap
             machine={machine}

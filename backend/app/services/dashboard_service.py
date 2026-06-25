@@ -13,6 +13,22 @@ from .section_parser import display_name, is_numeric_data_type
 from .sync_service import sync_machine
 from .value_format import formatted_value, row_json_safe, rows_json_safe
 
+SPEED_PATH = "Global PV/200 - format/state/machine speed"
+PRODUCTION_PATHS = {
+    "shift": {
+        "good": "Global PV/info/state/shift: good",
+        "bad": "Global PV/info/state/shift: bad",
+    },
+    "job": {
+        "good": "Global PV/info/state/job: good",
+        "bad": "Global PV/info/state/job: bad",
+    },
+    "total": {
+        "good": "Global PV/info/state/total: good",
+        "bad": "Global PV/info/state/total: bad",
+    },
+}
+
 
 def get_machine(machine_id: int) -> dict[str, Any]:
     row = pool.fetch_one(
@@ -28,6 +44,72 @@ def get_machine(machine_id: int) -> dict[str, Any]:
     row = row_json_safe(row)
     row["main_image_url"] = static_url(row.get("main_image_path"))
     return row
+
+
+def get_dashboard_summary(machine_id: int, minutes: int | None = None) -> dict[str, Any]:
+    settings = get_settings()
+    history_minutes = minutes or settings.default_history_minutes
+    start = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=history_minutes)
+
+    requested_paths = [SPEED_PATH]
+    for mode in ("shift", "job", "total"):
+        requested_paths.extend([PRODUCTION_PATHS[mode]["good"], PRODUCTION_PATHS[mode]["bad"]])
+
+    placeholders = ",".join(["%s"] * len(requested_paths))
+    tag_rows = pool.fetch_all(
+        f"""
+        SELECT t.tag_id, t.opc_path, t.display_name, t.browse_name, t.node_id, l.value_kind, l.value_num, l.value_bool, l.value_text, l.error_text
+        FROM opc_tags t
+        LEFT JOIN opc_tag_latest l ON l.tag_id = t.tag_id
+        WHERE t.machine_id = %s
+          AND t.is_active = 1
+          AND t.opc_path IN ({placeholders})
+        """,
+        tuple([machine_id, *requested_paths]),
+    )
+    tag_by_path = {str(row["opc_path"]): row for row in tag_rows}
+    tag_ids = [int(row["tag_id"]) for row in tag_rows if row.get("tag_id") is not None]
+    history_by_tag: dict[int, list[list[Any]]] = defaultdict(list)
+
+    if tag_ids:
+        history_placeholders = ",".join(["%s"] * len(tag_ids))
+        history_rows = pool.fetch_all(
+            f"""
+            SELECT created_at, tag_id, value_num
+            FROM opc_tag_values
+            WHERE tag_id IN ({history_placeholders})
+              AND created_at >= %s
+              AND value_kind = 1
+              AND value_num IS NOT NULL
+            ORDER BY created_at, tag_id
+            """,
+            tuple([*tag_ids, start]),
+        )
+        for row in history_rows:
+            captured = row.get("created_at")
+            timestamp = captured.isoformat() if hasattr(captured, "isoformat") else str(captured)
+            history_by_tag[int(row["tag_id"])].append([timestamp, row.get("value_num")])
+
+    def metric_for_path(opc_path: str) -> dict[str, Any]:
+        row = tag_by_path.get(opc_path)
+        if not row:
+            return {"opc_path": opc_path, "label": opc_path, "current_value": "--", "value_num": None, "points": []}
+        item = row_json_safe(row)
+        item["label"] = display_name(row)
+        item["current_value"] = formatted_value(row)
+        item["points"] = history_by_tag.get(int(row["tag_id"]), [])
+        return item
+
+    return {
+        "speed": metric_for_path(SPEED_PATH),
+        "production": {
+            mode: {
+                kind: metric_for_path(PRODUCTION_PATHS[mode][kind])
+                for kind in ("good", "bad")
+            }
+            for mode in ("shift", "job", "total")
+        },
+    }
 
 
 def list_machines() -> list[dict[str, Any]]:

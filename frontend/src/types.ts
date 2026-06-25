@@ -119,6 +119,23 @@ export interface DashboardState {
   alerts: AlertEvent[];
 }
 
+export interface SummaryMetric {
+  opc_path: string;
+  label: string;
+  current_value: string;
+  value_num?: number | null;
+  points: [string, number][];
+}
+
+export interface DashboardSummary {
+  speed: SummaryMetric;
+  production: {
+    shift: { good: SummaryMetric; bad: SummaryMetric };
+    job: { good: SummaryMetric; bad: SummaryMetric };
+    total: { good: SummaryMetric; bad: SummaryMetric };
+  };
+}
+
 export interface HistorySeries {
   tag_id: number;
   label: string;

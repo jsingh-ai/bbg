@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from ..config import get_settings
-from ..services.dashboard_service import get_machine, list_machines, get_sections
+from ..services.dashboard_service import get_dashboard_summary, get_machine, list_machines, get_sections
 from ..services.photo_service import list_photo_files
 from ..services.sync_service import sync_machine
 
@@ -29,6 +29,11 @@ def machines() -> list[dict]:
 @router.get("/machines/{machine_id}")
 def machine(machine_id: int) -> dict:
     return get_machine(machine_id)
+
+
+@router.get("/machines/{machine_id}/summary")
+def summary(machine_id: int) -> dict:
+    return get_dashboard_summary(machine_id)
 
 
 @router.post("/machines/{machine_id}/sync")
