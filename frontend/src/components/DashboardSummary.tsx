@@ -147,7 +147,7 @@ function Sparkline({
         animation: false,
         color: colors,
         backgroundColor: 'transparent',
-        grid: { left: 46, right: 14, top: 16, bottom: 30 },
+        grid: { left: 58, right: 14, top: 16, bottom: 30 },
         xAxis: {
           type: 'time',
           axisLine: { show: true, lineStyle: { color: 'rgba(148, 163, 184, 0.24)' } },
@@ -169,7 +169,7 @@ function Sparkline({
           type: 'value',
           name: yAxisName,
           nameLocation: 'middle',
-          nameGap: 34,
+          nameGap: 42,
           nameTextStyle: {
             color: '#94a3b8',
             fontSize: 10,
