@@ -336,6 +336,7 @@ export function SavedVariablesChart({
             <table className="value-table compare-table">
               <thead>
                 <tr>
+                  <th className="action-col">Remove</th>
                   <th>Section</th>
                   <th>Variable</th>
                   <th>Current Value</th>
@@ -344,6 +345,11 @@ export function SavedVariablesChart({
               <tbody>
                 {savedVariables.map((item) => (
                   <tr key={item.tag_id}>
+                    <td className="action-col">
+                      <button className="icon-button" onClick={() => onRemoveSavedVariable(item.tag_id)} title="Remove saved variable">
+                        <X size={16} />
+                      </button>
+                    </td>
                     <td>{item.section_key}</td>
                     <td>{item.label}</td>
                     <td className="current-value">{item.current_value}</td>

@@ -939,8 +939,8 @@ p { color: var(--muted); margin-bottom: 0; }
 }
 .section-content-row {
   display: grid;
-  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
-  gap: 16px;
+  grid-template-columns: minmax(170px, 220px) minmax(0, 1fr);
+  gap: 12px;
   padding: 12px 16px 0;
   align-items: start;
   flex: 1;
@@ -954,12 +954,15 @@ p { color: var(--muted); margin-bottom: 0; }
 .section-values-column {
   display: flex;
   flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
 }
 .section-values-scroll {
   flex: 1;
   min-height: 0;
   max-height: none;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 .section-photo {
   width: 100%;
@@ -973,21 +976,29 @@ p { color: var(--muted); margin-bottom: 0; }
 .section-photo-placeholder { margin: 0; padding: 20px; min-height: 220px; display: grid; place-items: center; }
 .empty-section { padding: 32px; }
 .subheading { margin: 0 0 8px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.74rem; }
-.value-table-wrap { overflow: auto; max-width: 100%; }
+.value-table-wrap {
+  overflow-y: auto;
+  overflow-x: hidden;
+  max-width: 100%;
+  min-height: 0;
+  flex: 1;
+}
 .value-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.9rem;
+  table-layout: fixed;
+  font-size: 0.84rem;
 }
 .value-table th, .value-table td {
-  padding: 10px 12px;
+  padding: 9px 10px;
   border-bottom: 1px solid var(--line);
   text-align: left;
   vertical-align: middle;
+  overflow-wrap: anywhere;
 }
 .value-table th {
   color: var(--muted);
-  font-size: 0.76rem;
+  font-size: 0.7rem;
   text-transform: uppercase;
   letter-spacing: 0.07em;
   background: #0f172a;
@@ -995,8 +1006,29 @@ p { color: var(--muted); margin-bottom: 0; }
   top: 0;
   z-index: 1;
 }
+.section-values-scroll .value-table th:nth-child(1),
+.section-values-scroll .value-table td:nth-child(1),
+.section-values-scroll .value-table th:nth-child(5),
+.section-values-scroll .value-table td:nth-child(5) {
+  width: 46px;
+}
+.section-values-scroll .value-table th:nth-child(3),
+.section-values-scroll .value-table td:nth-child(3) {
+  width: 96px;
+}
+.section-values-scroll .value-table th:nth-child(4),
+.section-values-scroll .value-table td:nth-child(4) {
+  width: 66px;
+}
+.section-values-scroll .value-table td:nth-child(2) {
+  line-height: 1.24;
+}
+.section-values-scroll .current-value {
+  font-size: 0.8rem;
+  line-height: 1.2;
+}
 .current-value { font-weight: 800; color: #f8fafc; }
-.action-col { width: 64px; text-align: center !important; }
+.action-col { width: 52px; text-align: center !important; }
 .muted-cell { color: var(--muted); text-align: center !important; }
 .hidden-vars { margin: 14px 16px 0; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
 .hidden-vars summary { padding: 12px 14px; cursor: pointer; color: var(--muted); }
