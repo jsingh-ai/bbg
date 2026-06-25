@@ -3,7 +3,11 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from ..schemas import AssistantChatRequest
-from ..services.assistant_service import get_assistant_diagnostics_response, handle_assistant_chat
+from ..services.assistant_service import (
+    get_assistant_diagnostics_response,
+    get_production_debug_response,
+    handle_assistant_chat,
+)
 
 router = APIRouter(prefix="/api/assistant", tags=["assistant"])
 
@@ -16,3 +20,8 @@ def assistant_chat(payload: AssistantChatRequest) -> dict:
 @router.get("/diagnostics")
 def assistant_diagnostics() -> dict:
     return get_assistant_diagnostics_response()
+
+
+@router.get("/production-debug")
+def assistant_production_debug(time_range: str = "today") -> dict:
+    return get_production_debug_response(time_range)

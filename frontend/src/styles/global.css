@@ -779,6 +779,18 @@ p { color: var(--muted); margin-bottom: 0; }
   flex-direction: column;
   gap: 10px;
 }
+.assistant-clear-button {
+  justify-content: center;
+  text-align: center;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.34), rgba(185, 28, 28, 0.26));
+  border-color: rgba(248, 113, 113, 0.5);
+}
+.assistant-clear-button:hover:not(:disabled) {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.42), rgba(185, 28, 28, 0.34));
+  border-color: rgba(252, 165, 165, 0.62);
+}
 .assistant-compose textarea {
   resize: vertical;
   min-height: 84px;

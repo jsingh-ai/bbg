@@ -54,6 +54,12 @@ Use the diagnostics endpoint first when calibrating tag paths:
 curl http://127.0.0.1:8000/api/assistant/diagnostics
 ```
 
+PowerShell:
+
+```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/assistant/diagnostics" | ConvertTo-Json -Depth 20
+```
+
 The response shows:
 
 - whether the assistant is enabled
@@ -102,6 +108,21 @@ Returned production metrics:
 - `first_timestamp`
 - `last_timestamp`
 
+For production validation, you can also inspect the raw counter behavior with:
+
+```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/assistant/production-debug" | ConvertTo-Json -Depth 20
+```
+
+This shows:
+
+- first and last samples for the configured good/bad counters
+- positive-delta sum used for production
+- raw first-to-last delta
+- reset count detected in the window
+
+Diagnostics suggestions are not automatically used for calculations. This is intentional so production and downtime analytics never silently switch to the wrong OPC tag.
+
 ## Stop Detection
 
 Stop detection uses the configured speed tag from `opc_tag_values`.
@@ -117,10 +138,16 @@ Method:
 Returned stop metrics:
 
 - `stop_count`
+- `transition_stop_count`
+- `downtime_period_count`
 - `total_down_minutes`
 - `longest_stop`
 - `average_stop_minutes`
 - `stops`
+
+If the first in-range speed sample is already at or below the stop threshold, the assistant marks that downtime period as open at the start of the selected range instead of pretending it observed the transition into the stop.
+
+If the last speed sample is still at or below the threshold, the final stop is marked open-ended.
 
 ## Parameter Change Ranking
 
@@ -170,18 +197,36 @@ To avoid ranking obvious production counters as unstable process parameters, Pha
 - `How many stops in the last 24 hours?`
 - `What changed around the last stop?`
 
-## Curl Examples
+## PowerShell Test Commands
 
-Diagnostics:
-
-```bash
-curl http://127.0.0.1:8000/api/assistant/diagnostics
+```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/assistant/diagnostics" | ConvertTo-Json -Depth 20
 ```
 
-Chat:
+```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/assistant/production-debug" | ConvertTo-Json -Depth 20
+```
 
-```bash
-curl -X POST http://127.0.0.1:8000/api/assistant/chat \
-  -H "Content-Type: application/json" \
-  -d '{"message":"How was production today?"}'
+```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/assistant/chat" -Method Post -ContentType "application/json" -Body '{"message":"How was production today?"}' | ConvertTo-Json -Depth 20
+```
+
+```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/assistant/chat" -Method Post -ContentType "application/json" -Body '{"message":"Compare today to yesterday"}' | ConvertTo-Json -Depth 20
+```
+
+```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/assistant/chat" -Method Post -ContentType "application/json" -Body '{"message":"How many stops in the last 24 hours?"}' | ConvertTo-Json -Depth 20
+```
+
+```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/assistant/chat" -Method Post -ContentType "application/json" -Body '{"message":"What changed the most in the last hour?"}' | ConvertTo-Json -Depth 20
+```
+
+```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/assistant/chat" -Method Post -ContentType "application/json" -Body '{"message":"What changed around the last stop?"}' | ConvertTo-Json -Depth 20
+```
+
+```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/assistant/chat" -Method Post -ContentType "application/json" -Body '{"message":"What happened in the unwinder today?"}' | ConvertTo-Json -Depth 20
 ```

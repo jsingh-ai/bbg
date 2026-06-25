@@ -263,7 +263,7 @@ function AssistantPanel({ enabled }: AssistantPanelProps) {
             />
             <div className="assistant-compose-actions">
               <button
-                className="secondary-button"
+                className="danger-button assistant-clear-button"
                 onClick={() => {
                   setMessages([]);
                   setMessage('');

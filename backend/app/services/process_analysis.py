@@ -14,6 +14,22 @@ from .value_format import formatted_value, row_json_safe, rows_json_safe
 
 
 COUNTER_HINTS = ("good", "bad", "total", "count", "counter", "shift", "job")
+SECTION_TERMS = (
+    "unwinder",
+    "dancer",
+    "dance",
+    "storage",
+    "storage cylinder",
+    "format",
+    "forming",
+    "cylinder",
+    "tension",
+    "web",
+    "seal",
+    "knife",
+    "temperature",
+    "pressure",
+)
 
 
 @dataclass(frozen=True)
@@ -97,6 +113,37 @@ def _counter_delta(rows: list[dict[str, Any]]) -> float:
             total += value - previous
         previous = value
     return total
+
+
+def _counter_stats(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    numeric_rows = [row for row in rows if row.get("value_num") is not None and row.get("created_at") is not None]
+    if not numeric_rows:
+        return {
+            "first": None,
+            "last": None,
+            "delta_sum": 0.0,
+            "raw_delta": 0.0,
+            "reset_count": 0,
+            "sample_count": 0,
+        }
+    reset_count = 0
+    previous: float | None = None
+    for row in numeric_rows:
+        current = float(row["value_num"])
+        if previous is not None and current < previous:
+            reset_count += 1
+        previous = current
+    first_row = numeric_rows[0]
+    last_row = numeric_rows[-1]
+    raw_delta = float(last_row["value_num"]) - float(first_row["value_num"])
+    return {
+        "first": {"timestamp": _as_iso(first_row["created_at"]), "value": float(first_row["value_num"])},
+        "last": {"timestamp": _as_iso(last_row["created_at"]), "value": float(last_row["value_num"])},
+        "delta_sum": round(_counter_delta(numeric_rows), 3),
+        "raw_delta": round(raw_delta, 3),
+        "reset_count": reset_count,
+        "sample_count": len(numeric_rows),
+    }
 
 
 def get_table_count_safe(table_name: str) -> int | None:
@@ -431,6 +478,7 @@ def get_production_summary(time_range: TimeRange, compare_to: TimeRange | None =
             "error": {
                 "code": "no_history_rows",
                 "message": "I found the tag, but there were no historical samples in that time range.",
+                **get_history_bounds(),
             },
             "good_bags": 0,
             "bad_bags": 0,
@@ -467,6 +515,38 @@ def get_production_summary(time_range: TimeRange, compare_to: TimeRange | None =
         else:
             result["comparison"] = baseline
     return result
+
+
+def get_production_debug(time_range: TimeRange) -> dict[str, Any]:
+    settings = _settings()
+    warnings: list[str] = []
+    good_resolution = resolve_configured_tag(settings.assistant_good_bags_tag_path, ["good", "bags", "shift good"])
+    bad_resolution = resolve_configured_tag(settings.assistant_bad_bags_tag_path, ["bad", "bags", "shift bad"])
+
+    def debug_for_resolution(resolution: dict[str, Any], fallback_key: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        if not resolution["found"] or not resolution["tag"]:
+            warnings.append(f"{fallback_key} tag not found for configured path '{resolution['configured_path']}'.")
+            return {"configured_path": resolution["configured_path"], "found": False, "suggestions": resolution.get("suggestions", [])}, []
+        tag = resolution["tag"]
+        rows = _fetch_numeric_series(int(tag["tag_id"]), time_range.start, time_range.end, max_rows=settings.assistant_max_rows)
+        return {
+            "configured_path": resolution["configured_path"],
+            "found": True,
+            "tag_id": int(tag["tag_id"]),
+            "label": display_name(tag),
+            "opc_path": tag.get("opc_path"),
+        }, rows
+
+    good_tag, good_rows = debug_for_resolution(good_resolution, "good")
+    bad_tag, bad_rows = debug_for_resolution(bad_resolution, "bad")
+    return {
+        "range": _range_dict(time_range),
+        "good_tag": good_tag,
+        "bad_tag": bad_tag,
+        "good_samples": _counter_stats(good_rows),
+        "bad_samples": _counter_stats(bad_rows),
+        "warnings": warnings,
+    }
 
 
 def get_stop_summary(time_range: TimeRange) -> dict[str, Any]:
@@ -514,6 +594,8 @@ def get_stop_summary(time_range: TimeRange) -> dict[str, Any]:
     min_stop = max(settings.assistant_min_stop_minutes, 1)
     stops: list[dict[str, Any]] = []
     active_start: datetime | None = None
+    transition_stop_count = 0
+    already_stopped_at_start = False
 
     for index, row in enumerate(rows):
         created_at = row.get("created_at")
@@ -524,8 +606,10 @@ def get_stop_summary(time_range: TimeRange) -> dict[str, Any]:
         if index == 0:
             if created_at < time_range.start and not current_running:
                 active_start = time_range.start
+                already_stopped_at_start = True
             elif created_at >= time_range.start and not current_running:
                 active_start = created_at
+                already_stopped_at_start = True
             continue
         previous = rows[index - 1]
         previous_value = previous.get("value_num")
@@ -535,23 +619,36 @@ def get_stop_summary(time_range: TimeRange) -> dict[str, Any]:
         was_running = float(previous_value) > threshold
         if was_running and not current_running and created_at >= time_range.start:
             active_start = created_at
+            transition_stop_count += 1
         elif not was_running and current_running and active_start is not None:
             duration = max(int((created_at - active_start).total_seconds() // 60), 0)
             if duration >= min_stop:
-                stops.append({"start": _as_iso(active_start), "end": _as_iso(created_at), "duration_minutes": duration})
+                stop_row = {"start": _as_iso(active_start), "end": _as_iso(created_at), "duration_minutes": duration}
+                if already_stopped_at_start and active_start <= time_range.start:
+                    stop_row["open_at_range_start"] = True
+                    stop_row["already_stopped_at_history_start"] = True
+                stops.append(stop_row)
             active_start = None
 
     if active_start is not None:
         duration = max(int((time_range.end - active_start).total_seconds() // 60), 0)
         if duration >= min_stop:
-            stops.append({"start": _as_iso(active_start), "end": _as_iso(time_range.end), "duration_minutes": duration, "open_ended": True})
+            stop_row = {"start": _as_iso(active_start), "end": _as_iso(time_range.end), "duration_minutes": duration, "open_ended": True}
+            if already_stopped_at_start and active_start <= time_range.start:
+                stop_row["open_at_range_start"] = True
+                stop_row["already_stopped_at_history_start"] = True
+            stops.append(stop_row)
 
     total_down_minutes = sum(int(stop["duration_minutes"]) for stop in stops)
     longest = max(stops, key=lambda item: int(item["duration_minutes"]), default=None)
     average = round(total_down_minutes / len(stops), 2) if stops else 0.0
     return {
         "range": _range_dict(time_range),
-        "stop_count": len(stops),
+        "stop_count": transition_stop_count,
+        "transition_stop_count": transition_stop_count,
+        "downtime_period_count": len(stops),
+        "already_stopped_at_range_start": already_stopped_at_start,
+        "has_open_ended_stop": bool(stops and stops[-1].get("open_ended")),
         "total_down_minutes": total_down_minutes,
         "longest_stop": longest,
         "average_stop_minutes": average,
