@@ -44,8 +44,8 @@ function ValueRows({
           <tr>
             <th className="action-col">Show</th>
             <th>Display Name</th>
-            <th>Type</th>
             <th>Current Value</th>
+            <th>Type</th>
             <th className="action-col">Save</th>
           </tr>
         </thead>
@@ -58,8 +58,8 @@ function ValueRows({
                 </button>
               </td>
               <td>{row.label}</td>
-              <td>{row.is_numeric ? 'Numeric' : 'Non-numeric'}</td>
               <td className="current-value">{row.current_value}</td>
+              <td>{row.is_numeric ? 'Numeric' : 'Non-numeric'}</td>
               <td className="action-col">
                 {row.is_numeric ? (
                   <button

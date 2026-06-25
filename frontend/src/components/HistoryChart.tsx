@@ -242,16 +242,6 @@ function HistoryChart({
     };
   }, []);
 
-  function setLastHour() {
-    setRange(defaultRange());
-  }
-
-  function setLastMinutes(minutes: number) {
-    const end = new Date();
-    const start = new Date(end.getTime() - minutes * 60_000);
-    setRange({ start: toLocalInputValue(start), end: toLocalInputValue(end) });
-  }
-
   if (!sectionKey) {
     return (
       <section className="history-panel panel-fill">
@@ -271,9 +261,6 @@ function HistoryChart({
       </div>
       <div className="history-controls-bar">
         <div className="history-controls">
-          <button onClick={() => setLastMinutes(15)}>15 min</button>
-          <button onClick={setLastHour}>Last hour</button>
-          <button onClick={() => setLastMinutes(240)}>4 hours</button>
           <label>
             Start
             <input type="datetime-local" value={range.start} onChange={(event) => setRange((prev) => ({ ...prev, start: event.target.value }))} />
@@ -338,6 +325,18 @@ function HistoryChart({
             <div>
               <h2>Saved Comparison Trends</h2>
               <p>Compare saved variables across sections.</p>
+            </div>
+          </div>
+          <div className="history-controls-bar compare-controls-bar">
+            <div className="history-controls">
+              <label>
+                Start
+                <input type="datetime-local" value={range.start} onChange={(event) => setRange((prev) => ({ ...prev, start: event.target.value }))} />
+              </label>
+              <label>
+                End
+                <input type="datetime-local" value={range.end} onChange={(event) => setRange((prev) => ({ ...prev, end: event.target.value }))} />
+              </label>
             </div>
           </div>
           <div className="compare-layout">
