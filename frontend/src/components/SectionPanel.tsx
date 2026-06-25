@@ -45,7 +45,6 @@ function ValueRows({
             <th className="action-col">Show</th>
             <th>Display Name</th>
             <th>Current Value</th>
-            <th>Type</th>
             <th className="action-col">Save</th>
           </tr>
         </thead>
@@ -59,7 +58,6 @@ function ValueRows({
               </td>
               <td>{row.label}</td>
               <td className="current-value">{row.current_value}</td>
-              <td>{row.is_numeric ? 'Numeric' : 'Non-numeric'}</td>
               <td className="action-col">
                 {row.is_numeric ? (
                   <button
@@ -78,7 +76,7 @@ function ValueRows({
           ))}
           {!values.length && (
             <tr>
-              <td colSpan={5} className="muted-cell">No variables in this group.</td>
+              <td colSpan={4} className="muted-cell">No variables in this group.</td>
             </tr>
           )}
         </tbody>

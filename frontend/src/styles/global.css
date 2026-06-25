@@ -608,6 +608,11 @@ p { color: var(--muted); margin-bottom: 0; }
   align-items: stretch;
   min-width: 0;
 }
+.dashboard-live-history-row > .section-panel,
+.dashboard-live-history-row > .history-panel {
+  height: clamp(620px, 72vh, 760px);
+  min-height: 0;
+}
 .dashboard-saved-history-row,
 .dashboard-alerts-row {
   min-width: 0;
@@ -933,9 +938,10 @@ p { color: var(--muted); margin-bottom: 0; }
 
 .section-panel {
   padding-bottom: 12px;
-  min-height: 592px;
+  min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 .section-content-row {
   display: grid;
@@ -1014,11 +1020,7 @@ p { color: var(--muted); margin-bottom: 0; }
 }
 .section-values-scroll .value-table th:nth-child(3),
 .section-values-scroll .value-table td:nth-child(3) {
-  width: 96px;
-}
-.section-values-scroll .value-table th:nth-child(4),
-.section-values-scroll .value-table td:nth-child(4) {
-  width: 66px;
+  width: 118px;
 }
 .section-values-scroll .value-table td:nth-child(2) {
   line-height: 1.24;
@@ -1070,7 +1072,12 @@ p { color: var(--muted); margin-bottom: 0; }
 .alert-detail { color: var(--muted); font-size: 0.84rem; margin-bottom: 6px; }
 .ack-button { width: calc(100% - 20px); margin: 0 10px 10px; justify-content: center; background: rgba(34, 197, 94, 0.14); border-color: rgba(34, 197, 94, 0.35); }
 
-.history-panel { min-height: 520px; }
+.history-panel {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
 .history-header { border-bottom: 0; padding-bottom: 8px; }
 .history-saved-panel {
   margin-top: 0;
@@ -1105,8 +1112,10 @@ p { color: var(--muted); margin-bottom: 0; }
   min-height: 440px;
 }
 .history-body-single {
-  display: block;
-  min-height: 500px;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 .history-selector {
   border-right: 1px solid var(--line);
@@ -1131,10 +1140,16 @@ p { color: var(--muted); margin-bottom: 0; }
   background: rgba(56, 189, 248, 0.10);
   color: var(--text);
 }
-.chart-stage { position: relative; min-width: 0; min-height: 440px; }
-.echart { width: 100%; height: 440px; }
+.chart-stage {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+.echart { width: 100%; height: 100%; min-height: 0; }
 .history-main-echart {
-  height: 500px;
+  height: 100%;
 }
 .chart-message { position: absolute; inset: 80px 40px auto 40px; z-index: 2; background: rgba(15, 23, 42, 0.8); }
 .history-chip-bar {
