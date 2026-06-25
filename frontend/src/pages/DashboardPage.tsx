@@ -10,14 +10,16 @@ import MachineMap from '../components/MachineMap';
 import RecipeSelector from '../components/RecipeSelector';
 import SectionPanel from '../components/SectionPanel';
 import type { LiveValue, SavedHistoryVariable } from '../types';
+import type { ThemeMode } from '../hooks/useTheme';
 
 interface DashboardPageProps {
   machineId: number;
   refreshSeconds: number;
   assistantEnabled: boolean;
+  theme: ThemeMode;
 }
 
-function DashboardPage({ machineId, refreshSeconds, assistantEnabled }: DashboardPageProps) {
+function DashboardPage({ machineId, refreshSeconds, assistantEnabled, theme }: DashboardPageProps) {
   const queryClient = useQueryClient();
   const [selectedSectionKey, setSelectedSectionKey] = useState<string | null>(null);
   const [numericValues, setNumericValues] = useState<LiveValue[]>([]);
@@ -132,7 +134,7 @@ function DashboardPage({ machineId, refreshSeconds, assistantEnabled }: Dashboar
 
       <div className="dashboard-grid">
         <div className="dashboard-summary-row">
-          <DashboardSummary machineId={machineId} summary={summaryQuery.data} />
+          <DashboardSummary machineId={machineId} summary={summaryQuery.data} theme={theme} />
         </div>
         <div className="dashboard-assistant-row">
           <AssistantPanel enabled={assistantEnabled} />
@@ -160,6 +162,7 @@ function DashboardPage({ machineId, refreshSeconds, assistantEnabled }: Dashboar
               sectionKey={selectedSectionKey}
               numericValues={numericValues}
               refreshMs={refreshMs}
+              theme={theme}
             />
           </div>
         )}
@@ -168,6 +171,7 @@ function DashboardPage({ machineId, refreshSeconds, assistantEnabled }: Dashboar
             <SavedVariablesChart
               machineId={machineId}
               refreshMs={refreshMs}
+              theme={theme}
               savedVariables={savedVariables}
               onRemoveSavedVariable={handleRemoveSavedVariable}
               onClearSavedVariables={handleClearSavedVariables}

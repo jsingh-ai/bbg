@@ -2,7 +2,10 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import App from './App';
+import { applyTheme, readStoredTheme } from './hooks/useTheme';
 import './styles/global.css';
+
+applyTheme(readStoredTheme());
 
 const queryClient = new QueryClient({
   defaultOptions: {

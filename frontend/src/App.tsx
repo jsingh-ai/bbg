@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Activity, Bell, Blocks, ChefHat, LayoutDashboard, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { useMemo, useState, type ReactNode } from 'react';
 import { api } from './api/client';
+import { useTheme } from './hooks/useTheme';
 import DashboardPage from './pages/DashboardPage';
 import LayoutEditorPage from './pages/LayoutEditorPage';
 import RecipePage from './pages/RecipePage';
@@ -11,7 +12,6 @@ type PageKey = 'dashboard' | 'layout' | 'recipes' | 'alerts';
 
 const navItems: { key: PageKey; label: string; icon: ReactNode }[] = [
   { key: 'dashboard', label: 'Live Dashboard', icon: <LayoutDashboard size={19} /> },
-  { key: 'layout', label: 'Machine Layout', icon: <Blocks size={19} /> },
   { key: 'recipes', label: 'Recipes', icon: <ChefHat size={19} /> },
   { key: 'alerts', label: 'Alert History', icon: <Bell size={19} /> }
 ];
@@ -19,6 +19,7 @@ const navItems: { key: PageKey; label: string; icon: ReactNode }[] = [
 function App() {
   const [page, setPage] = useState<PageKey>('dashboard');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const { theme, toggleTheme, isLight } = useTheme();
   const configQuery = useQuery({ queryKey: ['config'], queryFn: api.getConfig });
   const machinesQuery = useQuery({ queryKey: ['machines'], queryFn: api.listMachines });
   const [machineOverride, setMachineOverride] = useState<number | null>(null);
@@ -87,6 +88,18 @@ function App() {
           ))}
         </nav>
 
+        <div className="sidebar-theme-row">
+          <button
+            className={sidebarCollapsed ? 'sidebar-theme-button compact' : 'sidebar-theme-button'}
+            onClick={toggleTheme}
+            title={isLight ? 'Switch to dark mode' : 'Switch to light mode'}
+            aria-label={isLight ? 'Switch to dark mode' : 'Switch to light mode'}
+          >
+            <span className="sidebar-theme-swatch" aria-hidden="true">{isLight ? '◐' : '◑'}</span>
+            {!sidebarCollapsed && <span>{theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>}
+          </button>
+        </div>
+
         {!sidebarCollapsed && (
           <div className="sidebar-footer">
             <div>{machine?.machine_name ?? `Machine ${machineId}`}</div>
@@ -101,6 +114,7 @@ function App() {
             machineId={machineId}
             refreshSeconds={configQuery.data?.live_refresh_seconds ?? 60}
             assistantEnabled={configQuery.data?.assistant_enabled ?? false}
+            theme={theme}
           />
         )}
         {page === 'layout' && <LayoutEditorPage machineId={machineId} />}

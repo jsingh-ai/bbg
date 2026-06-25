@@ -3,11 +3,13 @@ import * as echarts from 'echarts';
 import { Maximize2, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import { api } from '../api/client';
+import { readThemeColor, type ThemeMode } from '../hooks/useTheme';
 import type { DashboardSummary as DashboardSummaryType, HistorySeries, SummaryMetric } from '../types';
 
 interface DashboardSummaryProps {
   machineId: number;
   summary?: DashboardSummaryType;
+  theme: ThemeMode;
 }
 
 type ProductionMode = 'shift' | 'job' | 'total';
@@ -41,7 +43,17 @@ function formatTooltipValue(value: TooltipValue | TooltipValue[]) {
   return value == null ? '--' : `${value}`;
 }
 
-function buildExpandedChartOption(data: Array<{ label: string; points: [string, number][] }>, title: string, yAxisName: string): echarts.EChartsOption {
+function buildExpandedChartOption(data: Array<{ label: string; points: [string, number][] }>, title: string, yAxisName: string, theme: ThemeMode): echarts.EChartsOption {
+  const tooltipBackground = readThemeColor('--chart-tooltip-bg', theme === 'light' ? 'rgba(248, 250, 252, 0.96)' : 'rgba(15, 23, 42, 0.96)');
+  const tooltipBorder = readThemeColor('--chart-tooltip-border', 'rgba(148, 163, 184, 0.28)');
+  const textStrong = readThemeColor('--chart-text-strong', theme === 'light' ? '#0f172a' : '#e5eefb');
+  const textMuted = readThemeColor('--chart-text-muted', theme === 'light' ? '#475569' : '#cbd5e1');
+  const axisText = readThemeColor('--chart-axis-text', theme === 'light' ? '#64748b' : '#94a3b8');
+  const axisName = readThemeColor('--chart-axis-name', '#64748b');
+  const axisLine = readThemeColor('--chart-axis-line', theme === 'light' ? 'rgba(100, 116, 139, 0.34)' : 'rgba(148, 163, 184, 0.35)');
+  const gridLine = readThemeColor('--chart-grid-line', theme === 'light' ? 'rgba(148, 163, 184, 0.18)' : 'rgba(148, 163, 184, 0.10)');
+  const zoomBackground = readThemeColor('--chart-zoom-bg', theme === 'light' ? 'rgba(226, 232, 240, 0.9)' : 'rgba(15, 23, 42, 0.55)');
+  const zoomFill = readThemeColor('--chart-zoom-fill', theme === 'light' ? 'rgba(56, 189, 248, 0.22)' : 'rgba(56, 189, 248, 0.18)');
   return {
     animation: false,
     color: ['#38bdf8', '#22c55e', '#ef4444'],
@@ -50,25 +62,25 @@ function buildExpandedChartOption(data: Array<{ label: string; points: [string, 
       text: title,
       left: 0,
       textStyle: {
-        color: '#e5eefb',
+        color: textStrong,
         fontSize: 16,
         fontWeight: 700
       }
     },
     tooltip: {
       trigger: 'axis',
-      backgroundColor: 'rgba(15, 23, 42, 0.96)',
-      borderColor: 'rgba(148, 163, 184, 0.28)',
-      textStyle: { color: '#e5eefb' },
+      backgroundColor: tooltipBackground,
+      borderColor: tooltipBorder,
+      textStyle: { color: textStrong },
       valueFormatter: formatTooltipValue
     },
     legend: {
       top: 34,
       type: 'scroll',
       data: data.map((series) => series.label),
-      textStyle: { color: '#cbd5e1' },
-      inactiveColor: '#64748b',
-      pageTextStyle: { color: '#cbd5e1' }
+      textStyle: { color: textMuted },
+      inactiveColor: axisName,
+      pageTextStyle: { color: textMuted }
     },
     grid: { left: 64, right: 28, top: 84, bottom: 58 },
     xAxis: {
@@ -76,10 +88,10 @@ function buildExpandedChartOption(data: Array<{ label: string; points: [string, 
       name: 'Timestamp',
       nameLocation: 'middle',
       nameGap: 36,
-      axisLine: { lineStyle: { color: 'rgba(148, 163, 184, 0.35)' } },
-      axisLabel: { color: '#94a3b8' },
-      splitLine: { lineStyle: { color: 'rgba(148, 163, 184, 0.10)' } },
-      nameTextStyle: { color: '#64748b' }
+      axisLine: { lineStyle: { color: axisLine } },
+      axisLabel: { color: axisText },
+      splitLine: { lineStyle: { color: gridLine } },
+      nameTextStyle: { color: axisName }
     },
     yAxis: {
       type: 'value',
@@ -87,10 +99,10 @@ function buildExpandedChartOption(data: Array<{ label: string; points: [string, 
       nameLocation: 'middle',
       nameGap: 50,
       scale: true,
-      axisLine: { lineStyle: { color: 'rgba(148, 163, 184, 0.35)' } },
-      axisLabel: { color: '#94a3b8' },
-      splitLine: { lineStyle: { color: 'rgba(148, 163, 184, 0.10)' } },
-      nameTextStyle: { color: '#64748b' }
+      axisLine: { lineStyle: { color: axisLine } },
+      axisLabel: { color: axisText },
+      splitLine: { lineStyle: { color: gridLine } },
+      nameTextStyle: { color: axisName }
     },
     dataZoom: [
       { type: 'inside' },
@@ -98,11 +110,11 @@ function buildExpandedChartOption(data: Array<{ label: string; points: [string, 
         type: 'slider',
         height: 18,
         bottom: 14,
-        borderColor: 'rgba(148, 163, 184, 0.22)',
-        backgroundColor: 'rgba(15, 23, 42, 0.55)',
-        fillerColor: 'rgba(56, 189, 248, 0.18)',
+        borderColor: tooltipBorder,
+        backgroundColor: zoomBackground,
+        fillerColor: zoomFill,
         moveHandleStyle: { color: '#38bdf8' },
-        textStyle: { color: '#94a3b8' }
+        textStyle: { color: axisText }
       }
     ],
     series: data.map((series) => ({
@@ -121,12 +133,14 @@ function Sparkline({
   series,
   colors,
   className,
-  yAxisName
+  yAxisName,
+  theme
 }: {
   series: { name: string; points: [string, number][] }[];
   colors: string[];
   className?: string;
   yAxisName?: string;
+  theme: ThemeMode;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
   const instance = useRef<echarts.ECharts | null>(null);
@@ -150,11 +164,11 @@ function Sparkline({
         grid: { left: 58, right: 14, top: 16, bottom: 30 },
         xAxis: {
           type: 'time',
-          axisLine: { show: true, lineStyle: { color: 'rgba(148, 163, 184, 0.24)' } },
+          axisLine: { show: true, lineStyle: { color: readThemeColor('--chart-axis-soft-line', theme === 'light' ? 'rgba(148, 163, 184, 0.22)' : 'rgba(148, 163, 184, 0.24)') } },
           axisTick: { show: false },
           axisLabel: {
             show: true,
-            color: '#94a3b8',
+            color: readThemeColor('--chart-axis-text', theme === 'light' ? '#64748b' : '#94a3b8'),
             fontSize: 10,
             hideOverlap: true,
             formatter: (value: number) =>
@@ -171,7 +185,7 @@ function Sparkline({
           nameLocation: 'middle',
           nameGap: 42,
           nameTextStyle: {
-            color: '#94a3b8',
+            color: readThemeColor('--chart-axis-text', theme === 'light' ? '#64748b' : '#94a3b8'),
             fontSize: 10,
             padding: [0, 0, 8, 0]
           },
@@ -180,16 +194,16 @@ function Sparkline({
           axisTick: { show: false },
           axisLabel: {
             show: true,
-            color: '#94a3b8',
+            color: readThemeColor('--chart-axis-text', theme === 'light' ? '#64748b' : '#94a3b8'),
             fontSize: 10
           },
-          splitLine: { lineStyle: { color: 'rgba(148, 163, 184, 0.10)' } }
+          splitLine: { lineStyle: { color: readThemeColor('--chart-grid-line', theme === 'light' ? 'rgba(148, 163, 184, 0.18)' : 'rgba(148, 163, 184, 0.10)') } }
         },
         tooltip: {
           trigger: 'axis',
-          backgroundColor: 'rgba(15, 23, 42, 0.94)',
-          borderColor: 'rgba(148, 163, 184, 0.25)',
-          textStyle: { color: '#e5eefb' },
+          backgroundColor: readThemeColor('--chart-tooltip-bg', theme === 'light' ? 'rgba(248, 250, 252, 0.96)' : 'rgba(15, 23, 42, 0.94)'),
+          borderColor: readThemeColor('--chart-tooltip-border', 'rgba(148, 163, 184, 0.25)'),
+          textStyle: { color: readThemeColor('--chart-text-strong', theme === 'light' ? '#0f172a' : '#e5eefb') },
           valueFormatter: formatTooltipValue
         },
         series: series.map((item) => ({
@@ -211,7 +225,7 @@ function Sparkline({
     window.addEventListener('resize', resize);
     resize();
     return () => window.removeEventListener('resize', resize);
-  }, [series, colors, hasPoints, yAxisName]);
+  }, [series, colors, hasPoints, yAxisName, theme]);
 
   useEffect(() => {
     return () => {
@@ -249,7 +263,8 @@ function ExpandedTrendModal({
   error,
   range,
   onRangeChange,
-  onClose
+  onClose,
+  theme
 }: {
   open: boolean;
   title: string;
@@ -260,6 +275,7 @@ function ExpandedTrendModal({
   range: { start: string; end: string };
   onRangeChange: Dispatch<SetStateAction<{ start: string; end: string }>>;
   onClose: () => void;
+  theme: ThemeMode;
 }) {
   const chartRef = useRef<HTMLDivElement | null>(null);
   const chartInstance = useRef<echarts.ECharts | null>(null);
@@ -303,13 +319,13 @@ function ExpandedTrendModal({
     }
     chart.clear();
     if (hasData) {
-      chart.setOption(buildExpandedChartOption(chartData, title, yAxisName), { notMerge: true });
+      chart.setOption(buildExpandedChartOption(chartData, title, yAxisName, theme), { notMerge: true });
     }
     const resize = () => chart.resize();
     window.addEventListener('resize', resize);
     resize();
     return () => window.removeEventListener('resize', resize);
-  }, [open, loading, chartData, title, yAxisName, hasData]);
+  }, [open, loading, chartData, title, yAxisName, hasData, theme]);
 
   useEffect(() => {
     return () => {
@@ -353,7 +369,7 @@ function ExpandedTrendModal({
   );
 }
 
-function DashboardSummary({ machineId, summary }: DashboardSummaryProps) {
+function DashboardSummary({ machineId, summary, theme }: DashboardSummaryProps) {
   const [mode, setMode] = useState<ProductionMode>('shift');
   const [expandedMetric, setExpandedMetric] = useState<ExpandedMetric | null>(null);
   const [expandedRange, setExpandedRange] = useState(defaultExpandedRange);
@@ -441,6 +457,7 @@ function DashboardSummary({ machineId, summary }: DashboardSummaryProps) {
                   ]}
                   colors={['#22c55e', '#ef4444']}
                   yAxisName="Bags"
+                  theme={theme}
                 />
               </div>
             </div>
@@ -475,6 +492,7 @@ function DashboardSummary({ machineId, summary }: DashboardSummaryProps) {
                   series={[{ name: 'Machine Speed', points: summary?.speed?.points ?? [] }]}
                   colors={['#38bdf8']}
                   yAxisName="Speed"
+                  theme={theme}
                 />
               </div>
             </div>
@@ -524,6 +542,7 @@ function DashboardSummary({ machineId, summary }: DashboardSummaryProps) {
         range={expandedRange}
         onRangeChange={setExpandedRange}
         onClose={() => setExpandedMetric(null)}
+        theme={theme}
       />
     </>
   );

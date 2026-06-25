@@ -3,6 +3,7 @@ import * as echarts from 'echarts';
 import { X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { api } from '../api/client';
+import { readThemeColor, type ThemeMode } from '../hooks/useTheme';
 import type { LiveValue, SavedHistoryVariable } from '../types';
 
 const CHART_COLORS = ['#38bdf8', '#22c55e', '#f59e0b', '#f97316', '#ef4444', '#a78bfa', '#14b8a6', '#f43f5e'];
@@ -12,11 +13,13 @@ interface SectionHistoryChartProps {
   sectionKey: string | null;
   numericValues: LiveValue[];
   refreshMs: number;
+  theme: ThemeMode;
 }
 
 interface SavedVariablesChartProps {
   machineId: number;
   refreshMs: number;
+  theme: ThemeMode;
   savedVariables: SavedHistoryVariable[];
   onRemoveSavedVariable: (tagId: number) => void;
   onClearSavedVariables: () => void;
@@ -40,26 +43,37 @@ function defaultRange() {
 
 function buildChartOption(
   data: Array<{ label: string; points: [string, number][] }>,
+  theme: ThemeMode,
   titlePrefix?: string
 ): echarts.EChartsOption {
+  const tooltipBackground = readThemeColor('--chart-tooltip-bg', theme === 'light' ? 'rgba(248, 250, 252, 0.96)' : 'rgba(15, 23, 42, 0.94)');
+  const tooltipBorder = readThemeColor('--chart-tooltip-border', 'rgba(148, 163, 184, 0.25)');
+  const textStrong = readThemeColor('--chart-text-strong', theme === 'light' ? '#0f172a' : '#e5eefb');
+  const textMuted = readThemeColor('--chart-text-muted', theme === 'light' ? '#475569' : '#cbd5e1');
+  const axisText = readThemeColor('--chart-axis-text', theme === 'light' ? '#64748b' : '#94a3b8');
+  const axisName = readThemeColor('--chart-axis-name', theme === 'light' ? '#64748b' : '#64748b');
+  const axisLine = readThemeColor('--chart-axis-line', theme === 'light' ? 'rgba(100, 116, 139, 0.34)' : 'rgba(148, 163, 184, 0.35)');
+  const gridLine = readThemeColor('--chart-grid-line', theme === 'light' ? 'rgba(148, 163, 184, 0.18)' : 'rgba(148, 163, 184, 0.10)');
+  const zoomBackground = readThemeColor('--chart-zoom-bg', theme === 'light' ? 'rgba(226, 232, 240, 0.9)' : 'rgba(15, 23, 42, 0.55)');
+  const zoomFill = readThemeColor('--chart-zoom-fill', theme === 'light' ? 'rgba(56, 189, 248, 0.22)' : 'rgba(56, 189, 248, 0.18)');
   return {
     animation: false,
     color: CHART_COLORS,
     backgroundColor: 'transparent',
     tooltip: {
       trigger: 'axis',
-      backgroundColor: 'rgba(15, 23, 42, 0.94)',
-      borderColor: 'rgba(148, 163, 184, 0.25)',
-      textStyle: { color: '#e5eefb' }
+      backgroundColor: tooltipBackground,
+      borderColor: tooltipBorder,
+      textStyle: { color: textStrong }
     },
     legend: {
       top: 0,
       type: 'scroll',
       data: data.map((series) => series.label),
       selected: Object.fromEntries(data.map((series) => [series.label, true])),
-      textStyle: { color: '#cbd5e1' },
-      inactiveColor: '#64748b',
-      pageTextStyle: { color: '#cbd5e1' }
+      textStyle: { color: textMuted },
+      inactiveColor: axisName,
+      pageTextStyle: { color: textMuted }
     },
     grid: { left: 56, right: 24, top: 56, bottom: 46 },
     xAxis: {
@@ -67,17 +81,17 @@ function buildChartOption(
       name: titlePrefix,
       nameLocation: 'middle',
       nameGap: 34,
-      axisLine: { lineStyle: { color: 'rgba(148, 163, 184, 0.35)' } },
-      splitLine: { lineStyle: { color: 'rgba(148, 163, 184, 0.10)' } },
-      axisLabel: { color: '#94a3b8' },
-      nameTextStyle: { color: '#64748b' }
+      axisLine: { lineStyle: { color: axisLine } },
+      splitLine: { lineStyle: { color: gridLine } },
+      axisLabel: { color: axisText },
+      nameTextStyle: { color: axisName }
     },
     yAxis: {
       type: 'value',
       scale: true,
-      axisLine: { lineStyle: { color: 'rgba(148, 163, 184, 0.35)' } },
-      splitLine: { lineStyle: { color: 'rgba(148, 163, 184, 0.10)' } },
-      axisLabel: { color: '#94a3b8' }
+      axisLine: { lineStyle: { color: axisLine } },
+      splitLine: { lineStyle: { color: gridLine } },
+      axisLabel: { color: axisText }
     },
     dataZoom: [
       { type: 'inside' },
@@ -85,11 +99,11 @@ function buildChartOption(
         type: 'slider',
         height: 18,
         bottom: 8,
-        borderColor: 'rgba(148, 163, 184, 0.22)',
-        backgroundColor: 'rgba(15, 23, 42, 0.55)',
-        fillerColor: 'rgba(56, 189, 248, 0.18)',
+        borderColor: tooltipBorder,
+        backgroundColor: zoomBackground,
+        fillerColor: zoomFill,
         moveHandleStyle: { color: '#38bdf8' },
-        textStyle: { color: '#94a3b8' }
+        textStyle: { color: axisText }
       }
     ],
     series: data.map((series) => ({
@@ -134,6 +148,7 @@ function useChart(
   loading: boolean,
   enabled: boolean,
   series: Array<{ label: string; points: [string, number][] }>,
+  theme: ThemeMode,
   titlePrefix?: string
 ) {
   const instance = useRef<echarts.ECharts | null>(null);
@@ -159,12 +174,12 @@ function useChart(
       return;
     }
     chart.clear();
-    chart.setOption(buildChartOption(series, titlePrefix), { notMerge: true });
+    chart.setOption(buildChartOption(series, theme, titlePrefix), { notMerge: true });
     const resize = () => chart.resize();
     window.addEventListener('resize', resize);
     resize();
     return () => window.removeEventListener('resize', resize);
-  }, [ref, loading, enabled, series, titlePrefix]);
+  }, [ref, loading, enabled, series, theme, titlePrefix]);
 
   useEffect(() => {
     return () => {
@@ -174,7 +189,7 @@ function useChart(
   }, []);
 }
 
-function HistoryChart({ machineId, sectionKey, numericValues, refreshMs }: SectionHistoryChartProps) {
+function HistoryChart({ machineId, sectionKey, numericValues, refreshMs, theme }: SectionHistoryChartProps) {
   const mainChartRef = useRef<HTMLDivElement | null>(null);
   const { range, setRange } = useAutoUpdatingRange(Boolean(sectionKey), refreshMs);
   const tagIds = useMemo(() => numericValues.map((row) => row.tag_id).sort((a, b) => a - b), [numericValues]);
@@ -197,7 +212,7 @@ function HistoryChart({ machineId, sectionKey, numericValues, refreshMs }: Secti
 
   const hasMainSeriesData = useMemo(() => mainSeries.some((series) => series.points.length > 0), [mainSeries]);
 
-  useChart(mainChartRef, mainHistoryQuery.isFetching, Boolean(tagIds.length), mainSeries);
+  useChart(mainChartRef, mainHistoryQuery.isFetching, Boolean(tagIds.length), mainSeries, theme);
 
   if (!sectionKey) {
     return (
@@ -249,6 +264,7 @@ function HistoryChart({ machineId, sectionKey, numericValues, refreshMs }: Secti
 export function SavedVariablesChart({
   machineId,
   refreshMs,
+  theme,
   savedVariables,
   onRemoveSavedVariable,
   onClearSavedVariables
@@ -278,7 +294,7 @@ export function SavedVariablesChart({
 
   const hasCompareSeriesData = useMemo(() => compareSeries.some((series) => series.points.length > 0), [compareSeries]);
 
-  useChart(compareChartRef, compareHistoryQuery.isFetching, Boolean(savedVariables.length), compareSeries, 'Saved comparison');
+  useChart(compareChartRef, compareHistoryQuery.isFetching, Boolean(savedVariables.length), compareSeries, theme, 'Saved comparison');
 
   return (
     <section className="history-panel history-saved-panel panel-fill">
