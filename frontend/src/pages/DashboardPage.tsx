@@ -118,7 +118,7 @@ function DashboardPage({ machineId, refreshSeconds }: DashboardPageProps) {
 
       <div className="dashboard-grid">
         <div className="dashboard-summary-row">
-          <DashboardSummary summary={summaryQuery.data} />
+          <DashboardSummary machineId={machineId} summary={summaryQuery.data} />
         </div>
         <div className="dashboard-map-row">
           <MachineMap

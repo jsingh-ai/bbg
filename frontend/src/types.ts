@@ -120,6 +120,7 @@ export interface DashboardState {
 }
 
 export interface SummaryMetric {
+  tag_id?: number;
   opc_path: string;
   label: string;
   current_value: string;
