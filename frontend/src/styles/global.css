@@ -2,6 +2,7 @@
 [data-theme="dark"] {
   --bg: #0b1220;
   --bg-accent: radial-gradient(circle at top left, rgba(37, 99, 235, 0.14), transparent 34%);
+  --panel-shell-overlay: linear-gradient(180deg, rgba(20, 31, 52, 0.14), transparent 30%);
   --sidebar: #07101d;
   --sidebar-bg: linear-gradient(180deg, #07101d, #0c1525);
   --panel: #111827;
@@ -69,7 +70,8 @@
 
 [data-theme="light"] {
   --bg: #eef3f8;
-  --bg-accent: radial-gradient(circle at top left, rgba(96, 165, 250, 0.16), transparent 32%);
+  --bg-accent: radial-gradient(circle at top left, rgba(148, 163, 184, 0.10), transparent 34%);
+  --panel-shell-overlay: linear-gradient(180deg, rgba(255, 255, 255, 0.5), rgba(241, 245, 249, 0.12));
   --sidebar: #f8fbff;
   --sidebar-bg: linear-gradient(180deg, #f8fbff, #eef4fa);
   --panel: #ffffff;
@@ -121,15 +123,15 @@
   --map-label-bg: rgba(255, 255, 255, 0.64);
   --map-label-border: rgba(15, 23, 42, 0.10);
   --map-label-text: rgba(31, 41, 55, 0.82);
-  --panel-header-summary-production: linear-gradient(135deg, rgba(34, 197, 94, 0.08), rgba(239, 68, 68, 0.05) 34%, rgba(241, 247, 253, 0.98));
-  --panel-header-summary-speed: linear-gradient(135deg, rgba(56, 189, 248, 0.10), rgba(241, 247, 253, 0.98) 48%);
-  --panel-header-summary-uptime: linear-gradient(135deg, rgba(96, 165, 250, 0.08), rgba(245, 158, 11, 0.05) 38%, rgba(241, 247, 253, 0.98));
-  --panel-header-assistant: linear-gradient(135deg, rgba(56, 189, 248, 0.11), rgba(37, 99, 235, 0.05) 42%, rgba(241, 247, 253, 0.98));
-  --panel-header-map: linear-gradient(135deg, rgba(56, 189, 248, 0.09), rgba(34, 197, 94, 0.05) 42%, rgba(241, 247, 253, 0.98));
-  --panel-header-section: linear-gradient(135deg, rgba(96, 165, 250, 0.10), rgba(241, 247, 253, 0.98) 46%);
-  --panel-header-alerts: linear-gradient(135deg, rgba(245, 158, 11, 0.10), rgba(241, 247, 253, 0.98) 40%);
-  --panel-header-history: linear-gradient(135deg, rgba(14, 165, 233, 0.10), rgba(241, 247, 253, 0.98) 44%);
-  --panel-header-saved: linear-gradient(135deg, rgba(168, 85, 247, 0.09), rgba(241, 247, 253, 0.98) 44%);
+  --panel-header-summary-production: linear-gradient(135deg, rgba(226, 232, 240, 0.92), rgba(241, 245, 249, 0.98) 54%, rgba(255, 255, 255, 0.99));
+  --panel-header-summary-speed: linear-gradient(135deg, rgba(232, 240, 249, 0.94), rgba(243, 247, 252, 0.99) 56%, rgba(255, 255, 255, 0.99));
+  --panel-header-summary-uptime: linear-gradient(135deg, rgba(235, 241, 247, 0.94), rgba(244, 247, 251, 0.99) 56%, rgba(255, 255, 255, 0.99));
+  --panel-header-assistant: linear-gradient(135deg, rgba(232, 240, 249, 0.95), rgba(243, 247, 252, 0.99) 56%, rgba(255, 255, 255, 0.99));
+  --panel-header-map: linear-gradient(135deg, rgba(234, 241, 248, 0.95), rgba(244, 247, 251, 0.99) 56%, rgba(255, 255, 255, 0.99));
+  --panel-header-section: linear-gradient(135deg, rgba(234, 241, 248, 0.95), rgba(244, 247, 251, 0.99) 56%, rgba(255, 255, 255, 0.99));
+  --panel-header-alerts: linear-gradient(135deg, rgba(237, 242, 247, 0.95), rgba(245, 247, 250, 0.99) 56%, rgba(255, 255, 255, 0.99));
+  --panel-header-history: linear-gradient(135deg, rgba(233, 240, 248, 0.95), rgba(244, 247, 251, 0.99) 56%, rgba(255, 255, 255, 0.99));
+  --panel-header-saved: linear-gradient(135deg, rgba(236, 240, 247, 0.95), rgba(244, 247, 251, 0.99) 56%, rgba(255, 255, 255, 0.99));
   --shadow: 0 14px 32px rgba(15, 23, 42, 0.10);
   --shadow-strong: 0 20px 42px rgba(15, 23, 42, 0.12);
 }
@@ -431,8 +433,8 @@ p { color: var(--muted); margin-bottom: 0; }
 
 .panel-fill {
   background:
-    linear-gradient(180deg, rgba(20, 31, 52, 0.14), transparent 30%),
-    rgba(17, 24, 39, 0.88);
+    var(--panel-shell-overlay),
+    var(--panel);
   border: 1px solid var(--line-strong);
   border-radius: 20px;
   box-shadow: var(--shadow-strong);
