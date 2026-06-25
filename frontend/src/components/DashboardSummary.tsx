@@ -1,6 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
 import * as echarts from 'echarts';
-import type { OptionDataValue } from 'echarts/types/dist/shared';
 import { Maximize2, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import { api } from '../api/client';
@@ -13,6 +12,7 @@ interface DashboardSummaryProps {
 
 type ProductionMode = 'shift' | 'job' | 'total';
 type ExpandedMetric = 'speed' | 'production';
+type TooltipValue = string | number | Date | null | undefined;
 
 function toLocalInputValue(date: Date) {
   const offset = date.getTimezoneOffset();
@@ -30,7 +30,7 @@ function defaultExpandedRange() {
   return { start: toLocalInputValue(start), end: toLocalInputValue(end) };
 }
 
-function formatTooltipValue(value: OptionDataValue | OptionDataValue[]) {
+function formatTooltipValue(value: TooltipValue | TooltipValue[]) {
   if (Array.isArray(value)) {
     const lastValue = value[value.length - 1];
     return lastValue == null ? '--' : `${lastValue}`;
