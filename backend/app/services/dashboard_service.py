@@ -66,15 +66,19 @@ def _latest_numeric_history_by_tag(tag_ids: list[int]) -> dict[int, dict[str, An
     return latest_by_tag
 
 
+def _is_timeout_marker(value: Any) -> bool:
+    text = str(value or "").strip().lower()
+    return "timeout" in text
+
+
 def _should_use_history_fallback(row: dict[str, Any]) -> bool:
     if row.get("value_num") is not None:
         return False
     if row.get("value_bool") is not None:
         return False
-    if row.get("value_text") not in (None, ""):
-        return False
+    value_text = row.get("value_text")
     error_text = row.get("error_text")
-    return bool(error_text)
+    return _is_timeout_marker(value_text) or bool(error_text)
 
 
 def _apply_numeric_history_fallback(item: dict[str, Any], history_row: dict[str, Any] | None) -> None:
@@ -82,6 +86,7 @@ def _apply_numeric_history_fallback(item: dict[str, Any], history_row: dict[str,
         return
     item["value_kind"] = 1
     item["value_num"] = history_row.get("value_num")
+    item["value_text"] = None
     item["error_text"] = None
     item["current_value"] = formatted_value(item)
 
@@ -431,38 +436,45 @@ def update_section(section_id: int, data: dict[str, Any]) -> dict[str, Any]:
 
 def get_section_live_values(machine_id: int, section_key: str, include_hidden: bool = True) -> dict[str, Any]:
     hidden_filter = "" if include_hidden else "AND cfg.is_visible = 1"
-    rows = pool.fetch_all(
-        f"""
-        SELECT
-            t.tag_id,
-            t.opc_path,
-            t.node_id,
-            t.display_name,
-            t.browse_name,
-            t.data_type,
-            cfg.section_key,
-            cfg.is_visible,
-            cfg.show_in_history_default,
-            cfg.sort_order,
-            l.captured_at,
-            l.is_good,
-            l.value_kind,
-            l.value_num,
-            l.value_bool,
-            l.value_text,
-            l.error_text,
-            l.updated_at
-        FROM opc_tag_display_config cfg
-        JOIN opc_tags t ON t.tag_id = cfg.tag_id
-        LEFT JOIN opc_tag_latest l ON l.tag_id = t.tag_id
-        WHERE cfg.machine_id = %s
-          AND cfg.section_key = %s
-          AND t.is_active = 1
-          {hidden_filter}
-        ORDER BY cfg.is_visible DESC, cfg.sort_order, COALESCE(t.display_name, t.browse_name, t.node_id)
-        """,
-        (machine_id, section_key),
-    )
+    def fetch_rows() -> list[dict[str, Any]]:
+        return pool.fetch_all(
+            f"""
+            SELECT
+                t.tag_id,
+                t.opc_path,
+                t.node_id,
+                t.display_name,
+                t.browse_name,
+                t.data_type,
+                cfg.section_key,
+                cfg.is_visible,
+                cfg.show_in_history_default,
+                cfg.sort_order,
+                l.captured_at,
+                l.is_good,
+                l.value_kind,
+                l.value_num,
+                l.value_bool,
+                l.value_text,
+                l.error_text,
+                l.updated_at
+            FROM opc_tag_display_config cfg
+            JOIN opc_tags t ON t.tag_id = cfg.tag_id
+            LEFT JOIN opc_tag_latest l ON l.tag_id = t.tag_id
+            WHERE cfg.machine_id = %s
+              AND cfg.section_key = %s
+              AND t.is_active = 1
+              {hidden_filter}
+            ORDER BY cfg.is_visible DESC, cfg.sort_order, COALESCE(t.display_name, t.browse_name, t.node_id)
+            """,
+            (machine_id, section_key),
+        )
+
+    rows = fetch_rows()
+    if not rows:
+        sync_machine(machine_id)
+        rows = fetch_rows()
+
     latest_numeric_history = _latest_numeric_history_by_tag(
         [int(row["tag_id"]) for row in rows if row.get("tag_id") is not None]
     )
@@ -529,30 +541,38 @@ def get_history(machine_id: int, section_key: str | None, start: datetime, end: 
         section_filter = "AND cfg.section_key = %s"
         params.append(section_key)
     params.extend([start, end, *tag_ids])
-    rows = pool.fetch_all(
-        f"""
-        SELECT
-            v.created_at,
-            v.tag_id,
-            v.value_num,
-            cfg.section_key,
-            t.display_name,
-            t.browse_name,
-            t.node_id
-        FROM opc_tag_values v
-        JOIN opc_tags t ON t.tag_id = v.tag_id
-        JOIN opc_tag_display_config cfg ON cfg.tag_id = t.tag_id AND cfg.machine_id = t.machine_id
-        WHERE t.machine_id = %s
-          {section_filter}
-          AND v.created_at >= %s
-          AND v.created_at <= %s
-          AND v.tag_id IN ({placeholders})
-          AND v.value_kind = 1
-          AND v.value_num IS NOT NULL
-        ORDER BY v.created_at, v.tag_id
-        """,
-        tuple(params),
-    )
+
+    def fetch_rows() -> list[dict[str, Any]]:
+        return pool.fetch_all(
+            f"""
+            SELECT
+                v.created_at,
+                v.tag_id,
+                v.value_num,
+                cfg.section_key,
+                t.display_name,
+                t.browse_name,
+                t.node_id
+            FROM opc_tag_values v
+            JOIN opc_tags t ON t.tag_id = v.tag_id
+            JOIN opc_tag_display_config cfg ON cfg.tag_id = t.tag_id AND cfg.machine_id = t.machine_id
+            WHERE t.machine_id = %s
+              {section_filter}
+              AND v.created_at >= %s
+              AND v.created_at <= %s
+              AND v.tag_id IN ({placeholders})
+              AND v.value_kind = 1
+              AND v.value_num IS NOT NULL
+            ORDER BY v.created_at, v.tag_id
+            """,
+            tuple(params),
+        )
+
+    rows = fetch_rows()
+    if not rows:
+        sync_machine(machine_id)
+        rows = fetch_rows()
+
     labels: dict[int, str] = {}
     sections: dict[int, str] = {}
     points_by_tag: dict[int, list[list[Any]]] = defaultdict(list)
