@@ -99,6 +99,8 @@ def _deterministic_answer(intent: str, raw: dict[str, Any]) -> str:
             )
         if code == "no_history_rows":
             return "I found the tag, but there were no historical samples in that time range."
+        if code == "no_stop_found":
+            return "I did not find a stop in the selected range."
         return str(error.get("message") or "The assistant could not complete that calculation.")
     if intent == "production_summary":
         answer = (
@@ -106,11 +108,13 @@ def _deterministic_answer(intent: str, raw: dict[str, Any]) -> str:
             f"total bags {raw['total_bags']}, bad rate {raw['bad_rate_pct']}%."
         )
         comparison = raw.get("comparison")
-        if comparison:
+        if comparison and not comparison.get("error") and "delta_total_bags" in comparison and "delta_bad_rate_pct" in comparison:
             answer += (
                 f" Compared with {comparison['range']['label']}, total bags changed by "
                 f"{comparison['delta_total_bags']} and bad rate changed by {comparison['delta_bad_rate_pct']} points."
             )
+        elif comparison and comparison.get("error"):
+            answer += f" I could not complete the comparison range because {comparison['error'].get('message', 'comparison data was unavailable')}."
         return answer
     if intent == "stop_summary":
         longest = raw.get("longest_stop")
@@ -207,7 +211,7 @@ def _format_production_response(raw: dict[str, Any]) -> tuple[list[dict[str, Any
     )
     tables: list[dict[str, Any]] = []
     comparison = raw.get("comparison")
-    if comparison:
+    if comparison and not comparison.get("error") and "range" in comparison:
         tables.append(
             _build_table(
                 "Production Comparison",
@@ -222,6 +226,14 @@ def _format_production_response(raw: dict[str, Any]) -> tuple[list[dict[str, Any
                         comparison["bad_rate_pct"],
                     ],
                 ],
+            )
+        )
+    elif comparison and comparison.get("error"):
+        tables.append(
+            _build_table(
+                "Comparison Status",
+                ["Status", "Message"],
+                [[comparison["error"].get("code", "error"), comparison["error"].get("message", "Comparison data unavailable")]],
             )
         )
     return cards, tables
@@ -395,7 +407,12 @@ def handle_assistant_chat(message: str, time_range: str | None = None, conversat
         else:
             last_stop = find_last_stop(stop_range)
             if not last_stop or not last_stop.get("start"):
-                raw = {"stop_time": None, "before_stop_movement": [], "after_stop_effect": []}
+                raw = {
+                    "stop_time": None,
+                    "before_stop_movement": [],
+                    "after_stop_effect": [],
+                    "error": {"code": "no_stop_found", "message": "No stop was found in the selected range."},
+                }
                 cards, tables = _format_around_stop_response(raw)
             else:
                 section = _match_section(message)
