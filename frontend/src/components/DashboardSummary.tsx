@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import * as echarts from 'echarts';
+import type { OptionDataValue } from 'echarts/types/dist/shared';
 import { Maximize2, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import { api } from '../api/client';
@@ -29,6 +30,17 @@ function defaultExpandedRange() {
   return { start: toLocalInputValue(start), end: toLocalInputValue(end) };
 }
 
+function formatTooltipValue(value: OptionDataValue | OptionDataValue[]) {
+  if (Array.isArray(value)) {
+    const lastValue = value[value.length - 1];
+    return lastValue == null ? '--' : `${lastValue}`;
+  }
+  if (typeof value === 'number') {
+    return value.toLocaleString();
+  }
+  return value == null ? '--' : `${value}`;
+}
+
 function buildExpandedChartOption(data: Array<{ label: string; points: [string, number][] }>, title: string, yAxisName: string): echarts.EChartsOption {
   return {
     animation: false,
@@ -48,7 +60,7 @@ function buildExpandedChartOption(data: Array<{ label: string; points: [string, 
       backgroundColor: 'rgba(15, 23, 42, 0.96)',
       borderColor: 'rgba(148, 163, 184, 0.28)',
       textStyle: { color: '#e5eefb' },
-      valueFormatter: (value: number | string) => (typeof value === 'number' ? value.toLocaleString() : `${value}`)
+      valueFormatter: formatTooltipValue
     },
     legend: {
       top: 34,
@@ -178,7 +190,7 @@ function Sparkline({
           backgroundColor: 'rgba(15, 23, 42, 0.94)',
           borderColor: 'rgba(148, 163, 184, 0.25)',
           textStyle: { color: '#e5eefb' },
-          valueFormatter: (value: number | string) => (typeof value === 'number' ? value.toLocaleString() : `${value}`)
+          valueFormatter: formatTooltipValue
         },
         series: series.map((item) => ({
           name: item.name,
