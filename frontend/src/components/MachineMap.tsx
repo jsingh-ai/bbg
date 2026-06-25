@@ -14,12 +14,13 @@ function MachineMap({ machine, sections, selectedSectionKey, onSelect }: Machine
 
   return (
     <div className="machine-map-card panel-fill">
-      <div className="panel-title-row">
-        <div>
-          <h2>Machine Map</h2>
-          <p>Click a mapped section to load live values and last-hour history.</p>
+      <div className="panel-title-row panel-header map-panel-header">
+        <div className="panel-title-block">
+          <span className="panel-eyebrow">Workspace</span>
+          <h2 className="panel-title">Machine Map</h2>
+          <p className="panel-subtitle">Click a mapped section to load live values and last-hour history.</p>
         </div>
-        <div className="map-header-actions">
+        <div className="panel-actions map-header-actions">
           <button className="secondary-button small-button" onClick={() => setShowBoxes((current) => !current)}>
             {showBoxes ? 'Hide Boxes' : 'Show Boxes'}
           </button>
@@ -31,29 +32,31 @@ function MachineMap({ machine, sections, selectedSectionKey, onSelect }: Machine
           </div>
         </div>
       </div>
-      <div className="machine-image-wrap">
-        {machine?.main_image_url ? (
-          <img className="machine-image" src={machine.main_image_url} alt={machine.machine_name} />
-        ) : (
-          <div className="image-placeholder">No main machine image configured.</div>
-        )}
-        {showBoxes &&
-          visibleBoxes.map((section) => (
-            <button
-              key={section.section_id}
-              className={`map-box ${section.status} ${selectedSectionKey === section.section_key ? 'selected' : ''}`}
-              style={{
-                left: `${section.box_x_pct ?? 0}%`,
-                top: `${section.box_y_pct ?? 0}%`,
-                width: `${section.box_w_pct ?? 0}%`,
-                height: `${section.box_h_pct ?? 0}%`
-              }}
-              title={section.display_label}
-              onClick={() => onSelect(section.section_key)}
-            >
-              <span>{section.display_label}</span>
-            </button>
-          ))}
+      <div className="panel-body machine-map-body">
+        <div className="machine-image-wrap">
+          {machine?.main_image_url ? (
+            <img className="machine-image" src={machine.main_image_url} alt={machine.machine_name} />
+          ) : (
+            <div className="image-placeholder">No main machine image configured.</div>
+          )}
+          {showBoxes &&
+            visibleBoxes.map((section) => (
+              <button
+                key={section.section_id}
+                className={`map-box ${section.status} ${selectedSectionKey === section.section_key ? 'selected' : ''}`}
+                style={{
+                  left: `${section.box_x_pct ?? 0}%`,
+                  top: `${section.box_y_pct ?? 0}%`,
+                  width: `${section.box_w_pct ?? 0}%`,
+                  height: `${section.box_h_pct ?? 0}%`
+                }}
+                title={section.display_label}
+                onClick={() => onSelect(section.section_key)}
+              >
+                <span>{section.display_label}</span>
+              </button>
+            ))}
+        </div>
       </div>
     </div>
   );

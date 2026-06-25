@@ -124,31 +124,34 @@ function SectionPanel({
 
   return (
     <section className="section-panel panel-fill">
-      <div className="panel-title-row compact">
-        <div>
-          <h2>{liveQuery.data?.section.display_label ?? sectionKey}</h2>
-          <p>Live values refresh automatically every minute.</p>
+      <div className="panel-title-row panel-header compact">
+        <div className="panel-title-block">
+          <span className="panel-eyebrow">Selected Section</span>
+          <h2 className="panel-title">{liveQuery.data?.section.display_label ?? sectionKey}</h2>
+          <p className="panel-subtitle">Live values refresh automatically every minute.</p>
         </div>
       </div>
 
-      <div className="section-content-row">
-        <div className="section-media-column">
-          {liveQuery.data?.section.section_photo_url ? (
-            <img className="section-photo" src={liveQuery.data.section.section_photo_url} alt={liveQuery.data.section.display_label} />
-          ) : (
-            <div className="section-photo-placeholder">No section photo found</div>
-          )}
-        </div>
-        <div className="section-values-column">
-          <h3 className="subheading">Shown Variables</h3>
-          <ValueRows
-            machineId={machineId}
-            values={shown}
-            visible
-            className="section-values-scroll"
-            onSaveVariable={onSaveVariable}
-            savedVariableIds={savedVariableIds}
-          />
+      <div className="panel-body section-panel-body">
+        <div className="section-content-row">
+          <div className="section-media-column">
+            {liveQuery.data?.section.section_photo_url ? (
+              <img className="section-photo" src={liveQuery.data.section.section_photo_url} alt={liveQuery.data.section.display_label} />
+            ) : (
+              <div className="section-photo-placeholder">No section photo found</div>
+            )}
+          </div>
+          <div className="section-values-column">
+            <h3 className="subheading">Shown Variables</h3>
+            <ValueRows
+              machineId={machineId}
+              values={shown}
+              visible
+              className="section-values-scroll"
+              onSaveVariable={onSaveVariable}
+              savedVariableIds={savedVariableIds}
+            />
+          </div>
         </div>
       </div>
 

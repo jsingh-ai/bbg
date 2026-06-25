@@ -114,12 +114,13 @@ function AssistantPanel({ enabled }: AssistantPanelProps) {
 
   return (
     <section className={expanded ? 'assistant-panel panel-fill expanded' : 'assistant-panel panel-fill collapsed'}>
-      <div className="panel-title-row assistant-header">
-        <div>
-          <h2>Process Assistant</h2>
-          <p>Read-only production and process analysis from OPC history.</p>
+      <div className="panel-title-row panel-header assistant-header">
+        <div className="panel-title-block">
+          <span className="panel-eyebrow">Analysis</span>
+          <h2 className="panel-title">Process Assistant</h2>
+          <p className="panel-subtitle">Read-only production and process analysis from OPC history.</p>
         </div>
-        <div className="assistant-header-actions">
+        <div className="panel-actions assistant-header-actions">
           <div className="assistant-status">
             <Sparkles size={16} />
             <span>{enabled ? 'LLM enabled when configured' : 'Deterministic mode available'}</span>
@@ -138,7 +139,7 @@ function AssistantPanel({ enabled }: AssistantPanelProps) {
       )}
 
       {expanded && (
-        <>
+        <div className="panel-body assistant-panel-body">
           <div className="assistant-operator-row">
             <button className="primary-button assistant-new-conversation-button" onClick={startNewConversation}>
               New Conversation
@@ -429,7 +430,7 @@ function AssistantPanel({ enabled }: AssistantPanelProps) {
               </button>
             </div>
           </div>
-        </>
+        </div>
       )}
     </section>
   );

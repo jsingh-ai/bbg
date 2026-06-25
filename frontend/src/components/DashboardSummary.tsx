@@ -398,13 +398,13 @@ function DashboardSummary({ machineId, summary }: DashboardSummaryProps) {
     <>
       <div className="dashboard-summary-grid">
         <section className="summary-card panel-fill">
-          <div className="summary-card-header">
-            <div>
-              <span className="summary-kicker">Production</span>
-              <h2>Good / Bad Bags</h2>
-              <small className="summary-trend-label">Last Hour Trend</small>
+          <div className="summary-card-header panel-header">
+            <div className="panel-title-block">
+              <span className="summary-kicker panel-eyebrow">Production</span>
+              <h2 className="panel-title">Good / Bad Bags</h2>
+              <small className="summary-trend-label panel-subtitle">Last Hour Trend</small>
             </div>
-            <div className="summary-card-actions">
+            <div className="summary-card-actions panel-actions">
               <div className="summary-mode-toggle">
                 {(['shift', 'job', 'total'] as ProductionMode[]).map((item) => (
                   <button
@@ -421,87 +421,93 @@ function DashboardSummary({ machineId, summary }: DashboardSummaryProps) {
               </button>
             </div>
           </div>
-          <div className="summary-production-layout">
-            <div className="summary-production-values">
-              <div className="summary-production-pill good">
-                <span>Good</span>
-                <strong>{metricValue(production?.good)}</strong>
+          <div className="panel-body summary-card-body">
+            <div className="summary-production-layout">
+              <div className="summary-production-values">
+                <div className="summary-production-pill good">
+                  <span>Good</span>
+                  <strong>{metricValue(production?.good)}</strong>
+                </div>
+                <div className="summary-production-pill bad">
+                  <span>Bad</span>
+                  <strong>{metricValue(production?.bad)}</strong>
+                </div>
               </div>
-              <div className="summary-production-pill bad">
-                <span>Bad</span>
-                <strong>{metricValue(production?.bad)}</strong>
+              <div className="summary-production-trend">
+                <Sparkline
+                  series={[
+                    { name: 'Good', points: production?.good?.points ?? [] },
+                    { name: 'Bad', points: production?.bad?.points ?? [] }
+                  ]}
+                  colors={['#22c55e', '#ef4444']}
+                  yAxisName="Bags"
+                />
               </div>
-            </div>
-            <div className="summary-production-trend">
-              <Sparkline
-                series={[
-                  { name: 'Good', points: production?.good?.points ?? [] },
-                  { name: 'Bad', points: production?.bad?.points ?? [] }
-                ]}
-                colors={['#22c55e', '#ef4444']}
-                yAxisName="Bags"
-              />
             </div>
           </div>
         </section>
 
         <section className="summary-card panel-fill">
-          <div className="summary-card-header">
-            <div>
-              <span className="summary-kicker">Machine</span>
-              <h2>Speed</h2>
-              <small className="summary-trend-label">Last Hour Trend</small>
+          <div className="summary-card-header panel-header">
+            <div className="panel-title-block">
+              <span className="summary-kicker panel-eyebrow">Machine</span>
+              <h2 className="panel-title">Speed</h2>
+              <small className="summary-trend-label panel-subtitle">Last Hour Trend</small>
             </div>
             <button className="secondary-button small-button" onClick={() => setExpandedMetric('speed')}>
               <Maximize2 size={14} /> Expand
             </button>
           </div>
-          <div className="summary-speed-layout">
-            <div className="summary-speed-kpi">
-              <span className="summary-speed-value">{metricValue(summary?.speed)}</span>
-              <div className="summary-speed-scale">
-                <div className="summary-speed-scale-fill" style={{ width: `${speedPct}%` }} />
+          <div className="panel-body summary-card-body">
+            <div className="summary-speed-layout">
+              <div className="summary-speed-kpi">
+                <span className="summary-speed-value">{metricValue(summary?.speed)}</span>
+                <div className="summary-speed-scale">
+                  <div className="summary-speed-scale-fill" style={{ width: `${speedPct}%` }} />
+                </div>
+                <div className="summary-speed-range">
+                  <span>0</span>
+                  <span>150</span>
+                </div>
               </div>
-              <div className="summary-speed-range">
-                <span>0</span>
-                <span>150</span>
+              <div className="summary-speed-trend">
+                <Sparkline
+                  series={[{ name: 'Machine Speed', points: summary?.speed?.points ?? [] }]}
+                  colors={['#38bdf8']}
+                  yAxisName="Speed"
+                />
               </div>
-            </div>
-            <div className="summary-speed-trend">
-              <Sparkline
-                series={[{ name: 'Machine Speed', points: summary?.speed?.points ?? [] }]}
-                colors={['#38bdf8']}
-                yAxisName="Speed"
-              />
             </div>
           </div>
         </section>
 
         <section className="summary-card panel-fill">
-          <div className="summary-card-header">
-            <div>
-              <span className="summary-kicker">Availability</span>
-              <h2>Uptime</h2>
-              <small className="summary-trend-label">Last 24 Hr</small>
+          <div className="summary-card-header panel-header">
+            <div className="panel-title-block">
+              <span className="summary-kicker panel-eyebrow">Availability</span>
+              <h2 className="panel-title">Uptime</h2>
+              <small className="summary-trend-label panel-subtitle">Last 24 Hr</small>
             </div>
           </div>
-          <div className="summary-uptime-layout">
-            <div className="summary-uptime-kpi">
-              <span className="summary-uptime-pct">{formatPercent(uptime?.uptime_pct)}</span>
-              <span className="summary-uptime-caption">Machine uptime</span>
-            </div>
-            <div className="summary-uptime-breakdown">
-              <div className="summary-uptime-row online">
-                <span>Online</span>
-                <strong>{uptime?.online_minutes ?? 0} min</strong>
+          <div className="panel-body summary-card-body">
+            <div className="summary-uptime-layout">
+              <div className="summary-uptime-kpi">
+                <span className="summary-uptime-pct">{formatPercent(uptime?.uptime_pct)}</span>
+                <span className="summary-uptime-caption">Machine uptime</span>
               </div>
-              <div className="summary-uptime-row offline">
-                <span>Offline</span>
-                <strong>{uptime?.offline_minutes ?? 0} min</strong>
-              </div>
-              <div className="summary-uptime-row down">
-                <span>Down</span>
-                <strong>{uptime?.down_minutes ?? 0} min</strong>
+              <div className="summary-uptime-breakdown">
+                <div className="summary-uptime-row online">
+                  <span>Online</span>
+                  <strong>{uptime?.online_minutes ?? 0} min</strong>
+                </div>
+                <div className="summary-uptime-row offline">
+                  <span>Offline</span>
+                  <strong>{uptime?.offline_minutes ?? 0} min</strong>
+                </div>
+                <div className="summary-uptime-row down">
+                  <span>Down</span>
+                  <strong>{uptime?.down_minutes ?? 0} min</strong>
+                </div>
               </div>
             </div>
           </div>
