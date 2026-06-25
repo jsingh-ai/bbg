@@ -139,6 +139,15 @@ function AssistantPanel({ enabled }: AssistantPanelProps) {
 
       {expanded && (
         <>
+          <div className="assistant-operator-row">
+            <button className="primary-button assistant-new-conversation-button" onClick={startNewConversation}>
+              New Conversation
+            </button>
+            <div className="assistant-control-hint">
+              Clear Chat only clears visible messages. New Conversation resets follow-up context.
+            </div>
+          </div>
+
           <div className="assistant-toolbar">
             <button className="secondary-button small-button" onClick={() => setShowDiagnostics((prev) => !prev)}>
               <SearchCheck size={14} /> {showDiagnostics ? 'Hide Diagnostics' : 'Check Setup'}
@@ -146,12 +155,6 @@ function AssistantPanel({ enabled }: AssistantPanelProps) {
             <button className="secondary-button small-button" onClick={() => setShowProductionCandidates((prev) => !prev)}>
               {showProductionCandidates ? 'Hide Production Candidates' : 'Production Candidates'}
             </button>
-            <button className="secondary-button small-button" onClick={startNewConversation}>
-              New Conversation
-            </button>
-          </div>
-          <div className="assistant-control-hint">
-            Clear Chat only clears visible messages. New Conversation resets follow-up context.
           </div>
 
           {showDiagnostics && (
@@ -333,37 +336,57 @@ function AssistantPanel({ enabled }: AssistantPanelProps) {
                         </div>
                       )}
 
-                      {entry.response.tables.map((table) => (
-                        <div className="assistant-table-shell" key={`${entry.id}-${table.title}`}>
-                          <h3>{table.title}</h3>
-                          <div className="table-scroll">
-                            <table className="data-table assistant-table">
-                              <thead>
-                                <tr>
-                                  {table.columns.map((column) => (
-                                    <th key={`${entry.id}-${table.title}-${column}`}>{column}</th>
-                                  ))}
-                                </tr>
-                              </thead>
-                              <tbody>
+                      {entry.response.tables.map((table) => {
+                        if (table.title === 'Warnings') {
+                          return (
+                            <details className="assistant-warning-shell" key={`${entry.id}-${table.title}`}>
+                              <summary>Warnings</summary>
+                              <div className="assistant-warning-list">
                                 {table.rows.length ? (
                                   table.rows.map((row, rowIndex) => (
-                                    <tr key={`${entry.id}-${table.title}-${rowIndex}`}>
-                                      {row.map((cell, cellIndex) => (
-                                        <td key={`${entry.id}-${table.title}-${rowIndex}-${cellIndex}`}>{cell == null ? '--' : String(cell)}</td>
-                                      ))}
-                                    </tr>
+                                    <div className="assistant-warning-item" key={`${entry.id}-${table.title}-${rowIndex}`}>
+                                      {row[0] == null ? '--' : String(row[0])}
+                                    </div>
                                   ))
                                 ) : (
-                                  <tr>
-                                    <td colSpan={table.columns.length}>No rows returned.</td>
-                                  </tr>
+                                  <div className="assistant-warning-item">No warnings.</div>
                                 )}
-                              </tbody>
-                            </table>
+                              </div>
+                            </details>
+                          );
+                        }
+                        return (
+                          <div className="assistant-table-shell" key={`${entry.id}-${table.title}`}>
+                            <h3>{table.title}</h3>
+                            <div className="table-scroll">
+                              <table className="data-table assistant-table">
+                                <thead>
+                                  <tr>
+                                    {table.columns.map((column) => (
+                                      <th key={`${entry.id}-${table.title}-${column}`}>{column}</th>
+                                    ))}
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {table.rows.length ? (
+                                    table.rows.map((row, rowIndex) => (
+                                      <tr key={`${entry.id}-${table.title}-${rowIndex}`}>
+                                        {row.map((cell, cellIndex) => (
+                                          <td key={`${entry.id}-${table.title}-${rowIndex}-${cellIndex}`}>{cell == null ? '--' : String(cell)}</td>
+                                        ))}
+                                      </tr>
+                                    ))
+                                  ) : (
+                                    <tr>
+                                      <td colSpan={table.columns.length}>No rows returned.</td>
+                                    </tr>
+                                  )}
+                                </tbody>
+                              </table>
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </>
                   )}
                 </div>

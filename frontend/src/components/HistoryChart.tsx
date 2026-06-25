@@ -244,87 +244,126 @@ function HistoryChart({
 
   if (!sectionKey) {
     return (
-      <section className="history-panel panel-fill">
-        <h2>Historical Trends</h2>
-        <div className="empty-state">Select a machine section to load the last hour of numeric history.</div>
-      </section>
+      <>
+        <section className="history-panel panel-fill">
+          <h2>Historical Trends</h2>
+          <div className="empty-state">Select a machine section to load the last hour of numeric history.</div>
+        </section>
+        <section className="history-panel history-saved-panel panel-fill">
+          <div className="panel-title-row history-saved-header">
+            <div>
+              <h2>Saved Variables</h2>
+              <p>Use saved variables to troubleshoot and compare values across different machine sections.</p>
+            </div>
+          </div>
+          <div className="history-chip-bar history-chip-bar-standalone">
+            <div className="history-chip-header">
+              <h3>Saved Comparison Set</h3>
+              <button className="secondary-button small-button" disabled={!savedVariables.length} onClick={onClearSavedVariables}>
+                Clear All
+              </button>
+            </div>
+            <div className="history-chip-list">
+              {savedVariables.map((item) => (
+                <button className="history-chip" key={item.tag_id} onClick={() => onRemoveSavedVariable(item.tag_id)}>
+                  <span>{item.section_key} - {item.label}</span>
+                  <X size={14} />
+                </button>
+              ))}
+              {!savedVariables.length && (
+                <div className="empty-state small">Save variables from live values to build a cross-section troubleshooting view here.</div>
+              )}
+            </div>
+          </div>
+        </section>
+      </>
     );
   }
 
   return (
-    <section className="history-panel panel-fill">
-      <div className="panel-title-row history-header">
-        <div>
-          <h2>Historical Trends</h2>
-          <p>Section: {sectionKey}</p>
+    <>
+      <section className="history-panel panel-fill">
+        <div className="panel-title-row history-header">
+          <div>
+            <h2>Historical Trends</h2>
+            <p>Section: {sectionKey}</p>
+          </div>
         </div>
-      </div>
-      <div className="history-controls-bar">
-        <div className="history-controls">
-          <label>
-            Start
-            <input type="datetime-local" value={range.start} onChange={(event) => setRange((prev) => ({ ...prev, start: event.target.value }))} />
-          </label>
-          <label>
-            End
-            <input type="datetime-local" value={range.end} onChange={(event) => setRange((prev) => ({ ...prev, end: event.target.value }))} />
-          </label>
-        </div>
-      </div>
-
-      <div className="history-body">
-        <aside className="history-selector">
-          <h3>Variables</h3>
-          {numericValues.map((row) => (
-            <label className="check-row history-check-row" key={row.tag_id}>
-              <input
-                type="checkbox"
-                checked={selectedTagIds.includes(row.tag_id)}
-                onChange={(event) => {
-                  setSelectedTagIds((prev) =>
-                    event.target.checked ? [...prev, row.tag_id] : prev.filter((id) => id !== row.tag_id)
-                  );
-                }}
-              />
-              <span>{row.label}</span>
+        <div className="history-controls-bar">
+          <div className="history-controls">
+            <label>
+              Start
+              <input type="datetime-local" value={range.start} onChange={(event) => setRange((prev) => ({ ...prev, start: event.target.value }))} />
             </label>
-          ))}
-          {!numericValues.length && <p className="empty-state small">No numeric visible variables found for this section.</p>}
-        </aside>
-        <div className="chart-stage">
-          {mainHistoryQuery.isError && <div className="chart-message">{(mainHistoryQuery.error as Error).message}</div>}
-          {!selectedTagIds.length && <div className="chart-message">Select one or more variables to chart.</div>}
-          {!mainHistoryQuery.isError && selectedTagIds.length > 0 && mainHistoryQuery.data && !hasMainSeriesData && (
-            <div className="chart-message">No history data found for the selected variables and time range.</div>
-          )}
-          <div ref={mainChartRef} className="echart" />
+            <label>
+              End
+              <input type="datetime-local" value={range.end} onChange={(event) => setRange((prev) => ({ ...prev, end: event.target.value }))} />
+            </label>
+          </div>
         </div>
-      </div>
 
-      <div className="history-chip-bar">
-        <div className="history-chip-header">
-          <h3>Saved Variables</h3>
-          <button className="secondary-button small-button" disabled={!savedVariables.length} onClick={onClearSavedVariables}>
-            Clear All
-          </button>
+        <div className="history-body">
+          <aside className="history-selector">
+            <h3>Variables</h3>
+            {numericValues.map((row) => (
+              <label className="check-row history-check-row" key={row.tag_id}>
+                <input
+                  type="checkbox"
+                  checked={selectedTagIds.includes(row.tag_id)}
+                  onChange={(event) => {
+                    setSelectedTagIds((prev) =>
+                      event.target.checked ? [...prev, row.tag_id] : prev.filter((id) => id !== row.tag_id)
+                    );
+                  }}
+                />
+                <span>{row.label}</span>
+              </label>
+            ))}
+            {!numericValues.length && <p className="empty-state small">No numeric visible variables found for this section.</p>}
+          </aside>
+          <div className="chart-stage">
+            {mainHistoryQuery.isError && <div className="chart-message">{(mainHistoryQuery.error as Error).message}</div>}
+            {!selectedTagIds.length && <div className="chart-message">Select one or more variables to chart.</div>}
+            {!mainHistoryQuery.isError && selectedTagIds.length > 0 && mainHistoryQuery.data && !hasMainSeriesData && (
+              <div className="chart-message">No history data found for the selected variables and time range.</div>
+            )}
+            <div ref={mainChartRef} className="echart" />
+          </div>
         </div>
-        <div className="history-chip-list">
-          {savedVariables.map((item) => (
-            <button className="history-chip" key={item.tag_id} onClick={() => onRemoveSavedVariable(item.tag_id)}>
-              <span>{item.section_key} - {item.label}</span>
-              <X size={14} />
+      </section>
+
+      <section className="history-panel history-saved-panel panel-fill">
+        <div className="panel-title-row history-saved-header">
+          <div>
+            <h2>Saved Variables</h2>
+            <p>Use saved variables for troubleshooting and to compare values from different sections together.</p>
+          </div>
+        </div>
+        <div className="history-chip-bar history-chip-bar-standalone">
+          <div className="history-chip-header">
+            <h3>Saved Comparison Set</h3>
+            <button className="secondary-button small-button" disabled={!savedVariables.length} onClick={onClearSavedVariables}>
+              Clear All
             </button>
-          ))}
-          {!savedVariables.length && <div className="empty-state small">Save variables from live values to compare sections here.</div>}
+          </div>
+          <div className="history-chip-list">
+            {savedVariables.map((item) => (
+              <button className="history-chip" key={item.tag_id} onClick={() => onRemoveSavedVariable(item.tag_id)}>
+                <span>{item.section_key} - {item.label}</span>
+                <X size={14} />
+              </button>
+            ))}
+            {!savedVariables.length && (
+              <div className="empty-state small">Save variables from live values to build a cross-section troubleshooting view here.</div>
+            )}
+          </div>
         </div>
-      </div>
 
-      {savedVariables.length > 0 && (
         <div className="history-compare-block">
           <div className="panel-title-row history-compare-header">
             <div>
               <h2>Saved Comparison Trends</h2>
-              <p>Compare saved variables across sections.</p>
+              <p>Trend the saved troubleshooting variables independently from the section history above.</p>
             </div>
           </div>
           <div className="history-controls-bar compare-controls-bar">
@@ -369,8 +408,8 @@ function HistoryChart({
             </div>
           </div>
         </div>
-      )}
-    </section>
+      </section>
+    </>
   );
 }
 

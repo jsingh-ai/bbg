@@ -169,8 +169,6 @@ def _deterministic_answer(intent: str, raw: dict[str, Any]) -> str:
                 answer += f" I cannot compare to yesterday because there are no samples from yesterday. Your history starts at {oldest}."
             else:
                 answer += f" I could not complete the comparison range because {comparison['error'].get('message', 'comparison data was unavailable')}."
-        if raw.get("warnings"):
-            answer += f" Warning: {raw['warnings'][0]}"
         return answer
 
     if intent == "stop_summary":
@@ -343,7 +341,7 @@ def _build_openai_messages(
         "Do not claim causation; say observed or correlated if applicable. "
         "Keep the answer short and plant-floor practical. "
         "Do not mention SQL or internal implementation details. "
-        "Preserve warnings from the backend."
+        "Warnings are shown separately in the UI. Do not repeat warnings in the main answer unless the user explicitly asks about them."
     )
     prompt = {"intent": intent, "question": message, "analysis_result": raw} if send_raw else _build_sanitized_llm_payload(message, intent, raw, cards, tables)
     return [
