@@ -32,6 +32,60 @@ PRODUCTION_PATHS = {
 UPTIME_WINDOW_MINUTES = 24 * 60
 
 
+def _latest_numeric_history_by_tag(tag_ids: list[int]) -> dict[int, dict[str, Any]]:
+    if not tag_ids:
+        return {}
+    placeholders = ",".join(["%s"] * len(tag_ids))
+    rows = pool.fetch_all(
+        f"""
+        SELECT v.tag_id, v.created_at, v.value_num
+        FROM opc_tag_values v
+        JOIN (
+            SELECT tag_id, MAX(created_at) AS latest_created_at
+            FROM opc_tag_values
+            WHERE tag_id IN ({placeholders})
+              AND value_kind = 1
+              AND value_num IS NOT NULL
+            GROUP BY tag_id
+        ) latest
+          ON latest.tag_id = v.tag_id
+         AND latest.latest_created_at = v.created_at
+        WHERE v.tag_id IN ({placeholders})
+          AND v.value_kind = 1
+          AND v.value_num IS NOT NULL
+        """,
+        tuple([*tag_ids, *tag_ids]),
+    )
+    latest_by_tag: dict[int, dict[str, Any]] = {}
+    for row in rows:
+        tag_id = int(row["tag_id"])
+        current = latest_by_tag.get(tag_id)
+        created_at = row.get("created_at")
+        if current is None or (created_at and current.get("created_at") and created_at > current["created_at"]):
+            latest_by_tag[tag_id] = row
+    return latest_by_tag
+
+
+def _should_use_history_fallback(row: dict[str, Any]) -> bool:
+    if row.get("value_num") is not None:
+        return False
+    if row.get("value_bool") is not None:
+        return False
+    if row.get("value_text") not in (None, ""):
+        return False
+    error_text = row.get("error_text")
+    return bool(error_text)
+
+
+def _apply_numeric_history_fallback(item: dict[str, Any], history_row: dict[str, Any] | None) -> None:
+    if not history_row:
+        return
+    item["value_kind"] = 1
+    item["value_num"] = history_row.get("value_num")
+    item["error_text"] = None
+    item["current_value"] = formatted_value(item)
+
+
 def get_machine(machine_id: int) -> dict[str, Any]:
     row = pool.fetch_one(
         """
@@ -81,6 +135,7 @@ def get_dashboard_summary(machine_id: int, minutes: int | None = None) -> dict[s
     tag_by_path = {normalize_key(str(row.get("opc_path") or "")): row for row in tag_rows}
     tag_ids = [int(row["tag_id"]) for row in tag_rows if row.get("tag_id") is not None]
     history_by_tag: dict[int, list[list[Any]]] = defaultdict(list)
+    latest_numeric_history = _latest_numeric_history_by_tag(tag_ids)
 
     if tag_ids:
         history_placeholders = ",".join(["%s"] * len(tag_ids))
@@ -108,6 +163,8 @@ def get_dashboard_summary(machine_id: int, minutes: int | None = None) -> dict[s
         item = row_json_safe(row)
         item["label"] = display_name(row)
         item["current_value"] = formatted_value(row)
+        if _should_use_history_fallback(row):
+            _apply_numeric_history_fallback(item, latest_numeric_history.get(int(row["tag_id"])))
         item["points"] = history_by_tag.get(int(row["tag_id"]), [])
         return item
 
@@ -406,12 +463,17 @@ def get_section_live_values(machine_id: int, section_key: str, include_hidden: b
         """,
         (machine_id, section_key),
     )
+    latest_numeric_history = _latest_numeric_history_by_tag(
+        [int(row["tag_id"]) for row in rows if row.get("tag_id") is not None]
+    )
     items: list[dict[str, Any]] = []
     for row in rows:
         item = row_json_safe(row)
         item["label"] = display_name(row)
         item["current_value"] = formatted_value(row)
         item["is_numeric"] = bool(row.get("value_kind") == 1 or is_numeric_data_type(row.get("data_type")))
+        if _should_use_history_fallback(row):
+            _apply_numeric_history_fallback(item, latest_numeric_history.get(int(row["tag_id"])))
         items.append(item)
 
     section = pool.fetch_one(
