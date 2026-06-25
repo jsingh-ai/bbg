@@ -133,22 +133,24 @@ function DashboardPage({ machineId, refreshSeconds, assistantEnabled }: Dashboar
             onSelect={handleSelectSection}
           />
         </div>
-        <div className="dashboard-live-history-row">
-          <SectionPanel
-            machineId={machineId}
-            sectionKey={selectedSectionKey}
-            refreshMs={refreshMs}
-            onNumericValuesChange={setNumericValues}
-            onSaveVariable={handleSaveVariable}
-            savedVariableIds={savedVariables.map((item) => item.tag_id)}
-          />
-          <HistoryChart
-            machineId={machineId}
-            sectionKey={selectedSectionKey}
-            numericValues={numericValues}
-            refreshMs={refreshMs}
-          />
-        </div>
+        {selectedSectionKey && (
+          <div className="dashboard-live-history-row">
+            <SectionPanel
+              machineId={machineId}
+              sectionKey={selectedSectionKey}
+              refreshMs={refreshMs}
+              onNumericValuesChange={setNumericValues}
+              onSaveVariable={handleSaveVariable}
+              savedVariableIds={savedVariables.map((item) => item.tag_id)}
+            />
+            <HistoryChart
+              machineId={machineId}
+              sectionKey={selectedSectionKey}
+              numericValues={numericValues}
+              refreshMs={refreshMs}
+            />
+          </div>
+        )}
         {savedVariables.length > 0 && (
           <div className="dashboard-saved-history-row">
             <SavedVariablesChart
@@ -160,9 +162,11 @@ function DashboardPage({ machineId, refreshSeconds, assistantEnabled }: Dashboar
             />
           </div>
         )}
-        <div className="dashboard-alerts-row">
-          <AlertPanel machineId={machineId} alerts={alerts} onSelectSection={handleSelectSection} />
-        </div>
+        {alerts.length > 0 && (
+          <div className="dashboard-alerts-row">
+            <AlertPanel machineId={machineId} alerts={alerts} onSelectSection={handleSelectSection} />
+          </div>
+        )}
       </div>
     </div>
   );
