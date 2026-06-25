@@ -261,9 +261,21 @@ function AssistantPanel({ enabled }: AssistantPanelProps) {
               placeholder="Ask about production, stops, sections, or process changes..."
               rows={3}
             />
-            <button className="primary-button" onClick={() => submitMessage(message)} disabled={chatMutation.isPending || !message.trim()}>
-              <Send size={16} /> Send
-            </button>
+            <div className="assistant-compose-actions">
+              <button
+                className="secondary-button"
+                onClick={() => {
+                  setMessages([]);
+                  setMessage('');
+                }}
+                disabled={!messages.length && !message.trim()}
+              >
+                Clear
+              </button>
+              <button className="primary-button" onClick={() => submitMessage(message)} disabled={chatMutation.isPending || !message.trim()}>
+                <Send size={16} /> Send
+              </button>
+            </div>
           </div>
         </>
       )}

@@ -774,6 +774,11 @@ p { color: var(--muted); margin-bottom: 0; }
   margin-top: 16px;
   align-items: end;
 }
+.assistant-compose-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
 .assistant-compose textarea {
   resize: vertical;
   min-height: 84px;
@@ -1164,6 +1169,9 @@ p { color: var(--muted); margin-bottom: 0; }
   }
   .assistant-compose {
     grid-template-columns: 1fr;
+  }
+  .assistant-compose-actions {
+    width: 100%;
   }
   .assistant-header-actions {
     width: 100%;
