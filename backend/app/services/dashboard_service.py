@@ -333,7 +333,9 @@ def get_history(machine_id: int, section_key: str | None, start: datetime, end: 
             v.tag_id,
             v.value_num,
             cfg.section_key,
-            COALESCE(NULLIF(t.display_name, ''), NULLIF(t.browse_name, ''), t.node_id) AS label
+            t.display_name,
+            t.browse_name,
+            t.node_id
         FROM opc_tag_values v
         JOIN opc_tags t ON t.tag_id = v.tag_id
         JOIN opc_tag_display_config cfg ON cfg.tag_id = t.tag_id AND cfg.machine_id = t.machine_id
@@ -353,7 +355,7 @@ def get_history(machine_id: int, section_key: str | None, start: datetime, end: 
     points_by_tag: dict[int, list[list[Any]]] = defaultdict(list)
     for row in rows:
         tag_id = int(row["tag_id"])
-        labels[tag_id] = str(row.get("label") or tag_id)
+        labels[tag_id] = display_name(row)
         sections[tag_id] = str(row.get("section_key") or "")
         captured = row.get("created_at")
         timestamp = captured.isoformat() if hasattr(captured, "isoformat") else str(captured)

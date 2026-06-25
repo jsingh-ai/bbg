@@ -450,7 +450,7 @@ p { color: var(--muted); margin-bottom: 0; }
 .history-controls input { width: 170px; }
 .history-body {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
+  grid-template-columns: 380px minmax(0, 1fr);
   min-height: 440px;
 }
 .history-selector {
@@ -498,6 +498,38 @@ p { color: var(--muted); margin-bottom: 0; }
 }
 .history-chip:hover {
   background: rgba(56, 189, 248, 0.18);
+}
+.history-compare-block {
+  border-top: 1px solid var(--line);
+}
+.history-compare-header {
+  padding-top: 14px;
+  padding-bottom: 10px;
+}
+.compare-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(320px, 0.85fr);
+  gap: 16px;
+  padding: 0 18px 18px;
+  align-items: start;
+}
+.compare-chart-stage {
+  min-height: 360px;
+  padding: 0;
+}
+.compare-echart {
+  height: 360px;
+}
+.compare-table-wrap {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  overflow: auto;
+  max-height: 360px;
+  background: rgba(15, 23, 42, 0.58);
+}
+.compare-table th,
+.compare-table td {
+  white-space: nowrap;
 }
 
 .layout-editor-grid {

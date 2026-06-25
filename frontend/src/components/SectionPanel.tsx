@@ -44,6 +44,7 @@ function ValueRows({
           <tr>
             <th className="action-col">Show</th>
             <th>Display Name</th>
+            <th>Type</th>
             <th>Current Value</th>
             <th className="action-col">Save</th>
           </tr>
@@ -57,28 +58,27 @@ function ValueRows({
                 </button>
               </td>
               <td>{row.label}</td>
+              <td>{row.is_numeric ? 'Numeric' : 'Non-numeric'}</td>
               <td className="current-value">{row.current_value}</td>
               <td className="action-col">
-                <button
-                  className="icon-button"
-                  disabled={!row.is_numeric || savedVariableIds.includes(row.tag_id)}
-                  onClick={() => onSaveVariable?.(row)}
-                  title={
-                    !row.is_numeric
-                      ? 'Only numeric variables can be saved for history comparison'
-                      : savedVariableIds.includes(row.tag_id)
-                        ? 'Variable already saved'
-                        : 'Save variable for comparison'
-                  }
-                >
-                  <Plus size={16} />
-                </button>
+                {row.is_numeric ? (
+                  <button
+                    className="icon-button"
+                    disabled={savedVariableIds.includes(row.tag_id)}
+                    onClick={() => onSaveVariable?.(row)}
+                    title={savedVariableIds.includes(row.tag_id) ? 'Variable already saved' : 'Save variable for comparison'}
+                  >
+                    <Plus size={16} />
+                  </button>
+                ) : (
+                  <span className="muted-cell">--</span>
+                )}
               </td>
             </tr>
           ))}
           {!values.length && (
             <tr>
-              <td colSpan={4} className="muted-cell">No variables in this group.</td>
+              <td colSpan={5} className="muted-cell">No variables in this group.</td>
             </tr>
           )}
         </tbody>
