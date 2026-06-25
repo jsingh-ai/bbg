@@ -324,7 +324,7 @@ def get_history(machine_id: int, section_key: str, start: datetime, end: datetim
     rows = pool.fetch_all(
         f"""
         SELECT
-            v.updated_at,
+            v.created_at,
             v.tag_id,
             v.value_num,
             COALESCE(NULLIF(t.display_name, ''), NULLIF(t.browse_name, ''), t.node_id) AS label
@@ -333,12 +333,12 @@ def get_history(machine_id: int, section_key: str, start: datetime, end: datetim
         JOIN opc_tag_display_config cfg ON cfg.tag_id = t.tag_id AND cfg.machine_id = t.machine_id
         WHERE t.machine_id = %s
           AND cfg.section_key = %s
-          AND v.updated_at >= %s
-          AND v.updated_at <= %s
+          AND v.created_at >= %s
+          AND v.created_at <= %s
           AND v.tag_id IN ({placeholders})
           AND v.value_kind = 1
           AND v.value_num IS NOT NULL
-        ORDER BY v.updated_at, v.tag_id
+        ORDER BY v.created_at, v.tag_id
         """,
         tuple(params),
     )
@@ -347,7 +347,7 @@ def get_history(machine_id: int, section_key: str, start: datetime, end: datetim
     for row in rows:
         tag_id = int(row["tag_id"])
         labels[tag_id] = str(row.get("label") or tag_id)
-        captured = row.get("updated_at")
+        captured = row.get("created_at")
         timestamp = captured.isoformat() if hasattr(captured, "isoformat") else str(captured)
         points_by_tag[tag_id].append([timestamp, row.get("value_num")])
 
