@@ -128,6 +128,14 @@ export interface SummaryMetric {
   points: [string, number][];
 }
 
+export interface SummaryUptime {
+  window_minutes: number;
+  online_minutes: number;
+  offline_minutes: number;
+  down_minutes: number;
+  uptime_pct: number;
+}
+
 export interface DashboardSummary {
   speed: SummaryMetric;
   production: {
@@ -135,6 +143,7 @@ export interface DashboardSummary {
     job: { good: SummaryMetric; bad: SummaryMetric };
     total: { good: SummaryMetric; bad: SummaryMetric };
   };
+  uptime: SummaryUptime;
 }
 
 export interface HistorySeries {

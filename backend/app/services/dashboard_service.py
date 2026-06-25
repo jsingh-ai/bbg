@@ -29,6 +29,8 @@ PRODUCTION_PATHS = {
     },
 }
 
+UPTIME_WINDOW_MINUTES = 24 * 60
+
 
 def get_machine(machine_id: int) -> dict[str, Any]:
     row = pool.fetch_one(
@@ -49,10 +51,6 @@ def get_machine(machine_id: int) -> dict[str, Any]:
 def get_dashboard_summary(machine_id: int, minutes: int | None = None) -> dict[str, Any]:
     history_minutes = minutes or 60
     start = datetime.now() - timedelta(minutes=history_minutes)
-
-    requested_paths = [SPEED_PATH]
-    for mode in ("shift", "job", "total"):
-        requested_paths.extend([PRODUCTION_PATHS[mode]["good"], PRODUCTION_PATHS[mode]["bad"]])
 
     tag_rows = pool.fetch_all(
         """
@@ -97,6 +95,54 @@ def get_dashboard_summary(machine_id: int, minutes: int | None = None) -> dict[s
         item["points"] = history_by_tag.get(int(row["tag_id"]), [])
         return item
 
+    def uptime_for_speed() -> dict[str, Any]:
+        speed_metric = metric_for_path(SPEED_PATH)
+        speed_tag_id = speed_metric.get("tag_id")
+        if speed_tag_id is None:
+            return {
+                "window_minutes": UPTIME_WINDOW_MINUTES,
+                "online_minutes": 0,
+                "offline_minutes": 0,
+                "down_minutes": UPTIME_WINDOW_MINUTES,
+                "uptime_pct": 0.0,
+            }
+
+        uptime_start = datetime.now() - timedelta(minutes=UPTIME_WINDOW_MINUTES)
+        uptime_rows = pool.fetch_all(
+            """
+            SELECT created_at, value_num
+            FROM opc_tag_values
+            WHERE tag_id = %s
+              AND created_at >= %s
+              AND value_kind = 1
+              AND value_num IS NOT NULL
+            ORDER BY created_at
+            """,
+            (speed_tag_id, uptime_start),
+        )
+
+        latest_by_minute: dict[str, float] = {}
+        for row in uptime_rows:
+            created_at = row.get("created_at")
+            value_num = row.get("value_num")
+            if created_at is None or value_num is None:
+                continue
+            minute_key = created_at.strftime("%Y-%m-%d %H:%M")
+            latest_by_minute[minute_key] = float(value_num)
+
+        online_minutes = sum(1 for value in latest_by_minute.values() if value != 0)
+        offline_minutes = sum(1 for value in latest_by_minute.values() if value == 0)
+        down_minutes = max(0, UPTIME_WINDOW_MINUTES - len(latest_by_minute))
+        uptime_pct = round((online_minutes / UPTIME_WINDOW_MINUTES) * 100, 1) if UPTIME_WINDOW_MINUTES else 0.0
+
+        return {
+            "window_minutes": UPTIME_WINDOW_MINUTES,
+            "online_minutes": online_minutes,
+            "offline_minutes": offline_minutes,
+            "down_minutes": down_minutes,
+            "uptime_pct": uptime_pct,
+        }
+
     return {
         "speed": metric_for_path(SPEED_PATH),
         "production": {
@@ -106,6 +152,7 @@ def get_dashboard_summary(machine_id: int, minutes: int | None = None) -> dict[s
             }
             for mode in ("shift", "job", "total")
         },
+        "uptime": uptime_for_speed(),
     }
 
 

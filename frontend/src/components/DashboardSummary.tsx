@@ -236,6 +236,10 @@ function metricNumber(metric?: SummaryMetric) {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
+function formatPercent(value?: number) {
+  return typeof value === 'number' && Number.isFinite(value) ? `${value.toFixed(1)}%` : '--';
+}
+
 function ExpandedTrendModal({
   open,
   title,
@@ -272,6 +276,14 @@ function ExpandedTrendModal({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [open, onClose]);
+
+  useEffect(() => {
+    if (!open) {
+      chartInstance.current?.dispose();
+      chartInstance.current = null;
+      return;
+    }
+  }, [open]);
 
   useEffect(() => {
     if (!open || !chartRef.current) return;
@@ -346,6 +358,7 @@ function DashboardSummary({ machineId, summary }: DashboardSummaryProps) {
   const [expandedMetric, setExpandedMetric] = useState<ExpandedMetric | null>(null);
   const [expandedRange, setExpandedRange] = useState(defaultExpandedRange);
   const production = summary?.production?.[mode];
+  const uptime = summary?.uptime;
   const speedValue = metricNumber(summary?.speed);
   const speedPct = speedValue === null ? 0 : Math.max(0, Math.min(100, (speedValue / 150) * 100));
 
@@ -460,6 +473,36 @@ function DashboardSummary({ machineId, summary }: DashboardSummaryProps) {
                 colors={['#38bdf8']}
                 yAxisName="Speed"
               />
+            </div>
+          </div>
+        </section>
+
+        <section className="summary-card panel-fill">
+          <div className="summary-card-header">
+            <div>
+              <span className="summary-kicker">Availability</span>
+              <h2>Uptime</h2>
+              <small className="summary-trend-label">Last 24 Hr</small>
+            </div>
+          </div>
+          <div className="summary-uptime-layout">
+            <div className="summary-uptime-kpi">
+              <span className="summary-uptime-pct">{formatPercent(uptime?.uptime_pct)}</span>
+              <span className="summary-uptime-caption">Machine uptime</span>
+            </div>
+            <div className="summary-uptime-breakdown">
+              <div className="summary-uptime-row online">
+                <span>Online</span>
+                <strong>{uptime?.online_minutes ?? 0} min</strong>
+              </div>
+              <div className="summary-uptime-row offline">
+                <span>Offline</span>
+                <strong>{uptime?.offline_minutes ?? 0} min</strong>
+              </div>
+              <div className="summary-uptime-row down">
+                <span>Down</span>
+                <strong>{uptime?.down_minutes ?? 0} min</strong>
+              </div>
             </div>
           </div>
         </section>
