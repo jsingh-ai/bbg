@@ -47,8 +47,7 @@ def get_machine(machine_id: int) -> dict[str, Any]:
 
 
 def get_dashboard_summary(machine_id: int, minutes: int | None = None) -> dict[str, Any]:
-    settings = get_settings()
-    history_minutes = minutes or settings.default_history_minutes
+    history_minutes = minutes or 60
     start = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=history_minutes)
 
     requested_paths = [SPEED_PATH]

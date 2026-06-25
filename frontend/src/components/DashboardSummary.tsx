@@ -19,6 +19,7 @@ function Sparkline({
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
   const instance = useRef<echarts.ECharts | null>(null);
+  const hasPoints = series.some((item) => item.points.length > 0);
 
   useEffect(() => {
     if (!ref.current) return;
@@ -26,21 +27,45 @@ function Sparkline({
       instance.current = echarts.init(ref.current);
     }
     const chart = instance.current;
+    if (!hasPoints) {
+      chart.clear();
+      return;
+    }
     chart.setOption(
       {
         animation: false,
         color: colors,
-        grid: { left: 4, right: 4, top: 8, bottom: 8 },
-        xAxis: { type: 'time', show: false },
-        yAxis: { type: 'value', show: false, scale: true },
-        tooltip: { trigger: 'axis' },
+        backgroundColor: 'transparent',
+        grid: { left: 10, right: 10, top: 12, bottom: 18 },
+        xAxis: {
+          type: 'time',
+          axisLine: { show: false },
+          axisTick: { show: false },
+          axisLabel: { show: false },
+          splitLine: { show: false }
+        },
+        yAxis: {
+          type: 'value',
+          show: false,
+          scale: true,
+          splitLine: { lineStyle: { color: 'rgba(148, 163, 184, 0.10)' } }
+        },
+        tooltip: {
+          trigger: 'axis',
+          backgroundColor: 'rgba(15, 23, 42, 0.94)',
+          borderColor: 'rgba(148, 163, 184, 0.25)',
+          textStyle: { color: '#e5eefb' }
+        },
         series: series.map((item) => ({
           name: item.name,
           type: 'line',
-          showSymbol: false,
+          showSymbol: true,
+          symbol: 'circle',
+          symbolSize: 5,
           smooth: true,
-          lineStyle: { width: 2.2 },
-          areaStyle: { opacity: 0.08 },
+          lineStyle: { width: 2.8 },
+          areaStyle: { opacity: 0.10 },
+          endLabel: { show: false },
           data: item.points
         }))
       },
@@ -50,7 +75,7 @@ function Sparkline({
     window.addEventListener('resize', resize);
     resize();
     return () => window.removeEventListener('resize', resize);
-  }, [series, colors]);
+  }, [series, colors, hasPoints]);
 
   useEffect(() => {
     return () => {
@@ -58,6 +83,10 @@ function Sparkline({
       instance.current = null;
     };
   }, []);
+
+  if (!hasPoints) {
+    return <div className={className ? `summary-sparkline summary-sparkline-empty ${className}` : 'summary-sparkline summary-sparkline-empty'}>No last-hour trend data</div>;
+  }
 
   return <div ref={ref} className={className ? `summary-sparkline ${className}` : 'summary-sparkline'} />;
 }
@@ -77,6 +106,7 @@ function DashboardSummary({ summary }: DashboardSummaryProps) {
           <div>
             <span className="summary-kicker">Machine</span>
             <h2>Speed</h2>
+            <small className="summary-trend-label">Last hour trend</small>
           </div>
           <strong className="summary-live-value">{metricValue(summary?.speed)}</strong>
         </div>
@@ -91,6 +121,7 @@ function DashboardSummary({ summary }: DashboardSummaryProps) {
           <div>
             <span className="summary-kicker">Production</span>
             <h2>Good / Bad Bags</h2>
+            <small className="summary-trend-label">Last hour trend</small>
           </div>
           <div className="summary-mode-toggle">
             {(['shift', 'job', 'total'] as ProductionMode[]).map((item) => (
