@@ -43,9 +43,9 @@ function ValueRows({
         <thead>
           <tr>
             <th className="action-col">Show</th>
-            <th className="action-col">Save</th>
             <th>Display Name</th>
             <th>Current Value</th>
+            <th className="action-col">Save</th>
           </tr>
         </thead>
         <tbody>
@@ -56,6 +56,8 @@ function ValueRows({
                   {visible ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </td>
+              <td>{row.label}</td>
+              <td className="current-value">{row.current_value}</td>
               <td className="action-col">
                 <button
                   className="icon-button"
@@ -72,8 +74,6 @@ function ValueRows({
                   <Plus size={16} />
                 </button>
               </td>
-              <td>{row.label}</td>
-              <td className="current-value">{row.current_value}</td>
             </tr>
           ))}
           {!values.length && (

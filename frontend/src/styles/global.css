@@ -378,7 +378,7 @@ p { color: var(--muted); margin-bottom: 0; }
   font-size: 0.76rem;
   text-transform: uppercase;
   letter-spacing: 0.07em;
-  background: rgba(15, 23, 42, 0.75);
+  background: #0f172a;
   position: sticky;
   top: 0;
   z-index: 1;
@@ -450,12 +450,13 @@ p { color: var(--muted); margin-bottom: 0; }
 .history-controls input { width: 170px; }
 .history-body {
   display: grid;
-  grid-template-columns: 220px minmax(0, 1fr);
+  grid-template-columns: 280px minmax(0, 1fr);
   min-height: 440px;
 }
 .history-selector {
   border-right: 1px solid var(--line);
   padding: 12px;
+  max-height: 440px;
   overflow: auto;
 }
 .check-row { display: flex; align-items: center; gap: 8px; color: var(--muted); margin-bottom: 8px; }
