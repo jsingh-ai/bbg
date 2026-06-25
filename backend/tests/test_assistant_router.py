@@ -3,10 +3,17 @@ from __future__ import annotations
 import unittest
 
 from app.services.assistant_router import route_assistant_message
-from app.services.assistant_service import _comparison_range_for_route, _deterministic_answer
+from app.services.assistant_service import _comparison_range_for_route, _deterministic_answer, _top_labels
 from app.services.process_analysis import (
     _is_dependent_speed_context_row,
+    _is_explicit_alarm_context_request,
+    _is_explicit_counter_context_request,
+    _is_explicit_plc_context_request,
+    _is_explicit_speed_context_request,
+    _is_explicit_state_context_request,
     _is_state_context_row,
+    _production_warnings,
+    dedupe_rows,
     make_contextual_label,
     should_exclude_section,
 )
@@ -60,6 +67,7 @@ class AssistantRouterTests(unittest.TestCase):
         route = route_assistant_message("What changed around the last stop?")
         self.assertEqual(route["intent"], "values_around_last_stop")
         self.assertNotEqual(route["intent"], "stop_summary")
+        self.assertFalse(route["explicit_speed_context"])
 
     def test_unwinder_section(self) -> None:
         route = route_assistant_message("What happened in the unwinder today?")
@@ -109,17 +117,15 @@ class AssistantRouterTests(unittest.TestCase):
         self.assertTrue(
             _is_state_context_row(
                 {"display_name": "state", "opc_path": "Global PV/020 - unwinder/state/state", "label": "state"},
-                message="What changed around the last stop?",
+                explicit_state_context=False,
             )
         )
 
     def test_explicit_state_question_bypasses_state_context(self) -> None:
-        self.assertFalse(
-            _is_state_context_row(
-                {"display_name": "state", "opc_path": "Global PV/020 - unwinder/state/state", "label": "state"},
-                message="Show me state changes around the last stop",
-            )
-        )
+        route = route_assistant_message("Show me state changes around the last stop")
+        self.assertTrue(route["explicit_state_context"])
+        self.assertFalse(route["explicit_speed_context"])
+        self.assertTrue(_is_explicit_state_context_request("Show me state changes around the last stop"))
 
     def test_dependent_speed_moves_to_context_by_default(self) -> None:
         self.assertTrue(
@@ -129,21 +135,28 @@ class AssistantRouterTests(unittest.TestCase):
                     "opc_path": "Global PV/265 - hotmelt - bottom forming/state/nozzle - a-side/current speed",
                     "label": "nozzle - a-side / current speed",
                 },
-                message="What changed the most in the last hour?",
+                explicit_speed_context=False,
             )
         )
 
     def test_explicit_speed_question_bypasses_dependent_speed_context(self) -> None:
-        self.assertFalse(
-            _is_dependent_speed_context_row(
-                {
-                    "display_name": "cycle performance",
-                    "opc_path": "Global PV/020 - unwinder/state/cycle performance",
-                    "label": "cycle performance",
-                },
-                message="Show me speed changes around the last stop",
-            )
-        )
+        route = route_assistant_message("Show me speed changes around the last stop")
+        self.assertTrue(route["explicit_speed_context"])
+        self.assertFalse(route["explicit_state_context"])
+        self.assertTrue(_is_explicit_speed_context_request("Show me speed changes around the last stop"))
+
+    def test_active_alarms_sets_alarm_context_only(self) -> None:
+        route = route_assistant_message("Show active alarms around the last stop")
+        self.assertTrue(route["explicit_alarm_context"])
+        self.assertFalse(route["explicit_speed_context"])
+        self.assertFalse(route["explicit_state_context"])
+        self.assertTrue(_is_explicit_alarm_context_request("Show active alarms around the last stop"))
+
+    def test_plc_context_request(self) -> None:
+        self.assertTrue(_is_explicit_plc_context_request("Show PLC controller health"))
+
+    def test_counter_context_request(self) -> None:
+        self.assertTrue(_is_explicit_counter_context_request("Show package counter values"))
 
     def test_exclude_exact_i_section(self) -> None:
         self.assertTrue(should_exclude_section("i", ["i"]))
@@ -159,6 +172,37 @@ class AssistantRouterTests(unittest.TestCase):
 
     def test_do_not_exclude_general_i16_for_i_term(self) -> None:
         self.assertFalse(should_exclude_section("A00-I16 - general", ["i"]))
+
+    def test_dedupe_keeps_one_row_for_duplicate_opc_path(self) -> None:
+        rows = dedupe_rows(
+            [
+                {"opc_path": "A/B/C", "label": "x", "movement_score": 1, "range_value": 1},
+                {"opc_path": "a/b/c", "label": "x", "movement_score": 3, "range_value": 2},
+            ],
+            lambda row: (row["movement_score"], row["range_value"]),
+        )
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["movement_score"], 3)
+
+    def test_section_summary_duplicate_labels_use_section_context(self) -> None:
+        labels = _top_labels(
+            [
+                {"label": "current diameter", "section_key": "020 - unwinder"},
+                {"label": "current diameter", "section_key": "300 - unwinder - bottom layer"},
+            ],
+            limit=2,
+        )
+        self.assertEqual(
+            labels,
+            [
+                "current diameter in 020 - unwinder",
+                "current diameter in 300 - unwinder - bottom layer",
+            ],
+        )
+
+    def test_production_warning_helper(self) -> None:
+        warnings = _production_warnings(7, 654, 661, round((654 / 661) * 100, 2))
+        self.assertTrue(warnings)
 
 
 if __name__ == "__main__":

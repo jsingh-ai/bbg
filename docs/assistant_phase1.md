@@ -48,6 +48,9 @@ ASSISTANT_EXCLUDED_STATE_TERMS=state,status,mode
 ASSISTANT_STATE_CONTEXT_ENABLED=true
 ASSISTANT_DEPENDENT_SPEED_TERMS=current speed,cycle performance
 ASSISTANT_SPEED_CONTEXT_ENABLED=true
+ASSISTANT_CONTEXT_ENABLED=true
+ASSISTANT_CONTEXT_MAX_TURNS=5
+ASSISTANT_CONTEXT_MAX_AGE_MINUTES=120
 ```
 
 Notes:
@@ -79,7 +82,7 @@ The response shows:
 - latest and oldest history timestamps
 - compact suggestions when a configured tag path does not match a real tag
 
-Chat responses also include `raw.route`, which shows the deterministic router decision, resolved system, section terms, time range, and matched rule.
+Chat responses also include `raw.route`, which shows the deterministic router decision, resolved system, section terms, time range, matched rule, and follow-up metadata under `raw.route.followup`.
 
 The assistant service also exposes:
 
@@ -88,6 +91,29 @@ Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/assistant/version" | ConvertTo
 ```
 
 That route returns backend JSON metadata such as `raw_route_supported`, `started_at`, `process_id`, and best-effort git commit/branch information.
+
+## Follow-Up Context
+
+The assistant now supports lightweight follow-up context using in-memory state only.
+
+- It stores only the last 5 route summaries per `conversation_id`.
+- It stores route-level context only: message, intent, time range, compare flag, resolved system, section terms, subject, stop time, and a timestamp.
+- It does not store full chat history.
+- It does not store DB rows.
+- It does not store OpenAI prompts or responses.
+- It does not survive backend restart.
+- It does not write to MySQL.
+
+Frontend behavior:
+
+- `AssistantPanel` sends a stable `conversation_id` for the current browser chat session.
+- `New Conversation` clears the local chat view, rotates the browser-side `conversation_id`, and can clear the matching in-memory backend conversation state.
+
+Debug behavior:
+
+- `raw.route.followup.used_context` tells you whether a follow-up inherited context.
+- `raw.route.followup.reason` explains why context was or was not applied.
+- `raw.route.followup.previous_*` and `inherited_*` fields show what was reused.
 
 ### Missing Tag Warnings
 
@@ -153,9 +179,21 @@ They do not apply to:
 - production candidates
 - explicit PLC / I/O / system-health style questions
 
-Machine speed is treated as context-only by default for general process ranking. It can still appear as stop context, but it is removed from the visible ranked process-variable lists unless the user explicitly asks about speed, stops, downtime, or machine state.
+Machine speed is treated as context-only by default for general process ranking. It can still appear as stop context, but it is removed from the visible ranked process-variable lists unless the user explicitly asks about speed, performance, motion, or machine-speed behavior.
 
 State, status, and mode tags are also context-only by default for general process questions. Dependent speed and performance tags such as `current speed` and `cycle performance` are moved to context by default unless the user explicitly asks about speed, performance, or motion.
+
+The assistant uses category-specific bypass flags instead of one broad override:
+
+- speed/performance questions can enable speed context without automatically enabling state, alarms, counters, or PLC/I/O
+- state/status questions can enable state context without pulling speed rows into ranked process movement
+- alarm questions can bypass alarm-system exclusions without re-enabling counters or PLC/I/O noise
+- counter questions can expose counters without changing unrelated filter categories
+- PLC/I/O questions can bypass `/i/o/` exclusions without changing alarm, counter, or speed handling
+
+Stop and downtime questions do not automatically allow speed or dependent-speed rows to become ranked process-cause candidates. Those rows stay in context unless the user explicitly asks for speed/performance behavior.
+
+Context rows are deduplicated by stable OPC-path-first keys, and repeated answer labels are disambiguated with section context when needed.
 
 Repeated names are disambiguated with contextual labels derived from OPC path segments. For example:
 
@@ -251,6 +289,13 @@ If the last speed sample is still at or below the threshold, the final stop is m
 
 The machine speed tag remains the stop marker. It is not presented as proof of process cause in around-stop analysis.
 
+Around-stop analysis keeps categories independent:
+
+- default stop questions exclude counters, alarms, PLC/I/O, state/status values, dependent speeds, zero-range rows, and the speed marker from ranked process-candidate tables
+- explicit state questions can show state/status changes without automatically promoting speed rows
+- explicit speed questions keep machine speed and dependent speed/performance rows in the `Speed / Performance Context` table and still avoid presenting them as process-cause proof
+- visible context tables are deduplicated before they are returned
+
 ## Parameter Change Ranking
 
 Most-changed parameter analysis only uses numeric rows:
@@ -291,7 +336,7 @@ To avoid ranking obvious production counters as unstable process parameters, Pha
 - Correlation is not proof of cause.
 - Tag paths may need adjustment in `.env`.
 - Section matching is string-based and depends on current section/tag naming.
-- The assistant does not keep long-lived server-side conversation memory in Phase 1.
+- Follow-up memory is process-local only, capped to 5 recent turns, and does not survive backend restart.
 
 ## Recommended First Tests
 
@@ -353,4 +398,28 @@ Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/assistant/chat" -Method Post -
 
 ```powershell
 Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/assistant/chat" -Method Post -ContentType "application/json" -Body '{"message":"What happened in the dancer today?"}' | ConvertTo-Json -Depth 20
+```
+
+```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/assistant/chat" -Method Post -ContentType "application/json" -Body '{"conversation_id":"followup-prod","message":"How was production today?"}' | ConvertTo-Json -Depth 20
+```
+
+```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/assistant/chat" -Method Post -ContentType "application/json" -Body '{"conversation_id":"followup-prod","message":"What about this week?"}' | ConvertTo-Json -Depth 20
+```
+
+```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/assistant/chat" -Method Post -ContentType "application/json" -Body '{"conversation_id":"followup-stops","message":"How many stops this week?"}' | ConvertTo-Json -Depth 20
+```
+
+```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/assistant/chat" -Method Post -ContentType "application/json" -Body '{"conversation_id":"followup-stops","message":"What about bags?"}' | ConvertTo-Json -Depth 20
+```
+
+```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/assistant/chat" -Method Post -ContentType "application/json" -Body '{"conversation_id":"followup-stop-section","message":"What changed around the last stop?"}' | ConvertTo-Json -Depth 20
+```
+
+```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/assistant/chat" -Method Post -ContentType "application/json" -Body '{"conversation_id":"followup-stop-section","message":"What about unwinder?"}' | ConvertTo-Json -Depth 20
 ```

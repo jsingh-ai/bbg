@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from ..schemas import AssistantChatRequest
+from ..schemas import AssistantChatRequest, AssistantConversationClearRequest
 from ..services.assistant_service import (
+    clear_assistant_conversation,
     get_assistant_diagnostics_response,
     get_production_candidates_response,
     get_production_debug_response,
@@ -37,3 +38,8 @@ def assistant_production_candidates(time_range: str = "today", limit: int = 50) 
 @router.get("/version")
 def assistant_version() -> dict:
     return get_assistant_version_response()
+
+
+@router.post("/conversation/clear")
+def assistant_conversation_clear(payload: AssistantConversationClearRequest) -> dict:
+    return clear_assistant_conversation(payload.conversation_id)

@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Bot, ChevronDown, ChevronUp, SearchCheck, Send, Sparkles, User } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
 import type { AssistantChatResponse } from '../types';
 
@@ -30,7 +30,9 @@ function AssistantPanel({ enabled }: AssistantPanelProps) {
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [showProductionCandidates, setShowProductionCandidates] = useState(false);
   const [expanded, setExpanded] = useState(false);
-  const conversationId = useMemo(() => `assistant-${Date.now()}`, []);
+  const [conversationId, setConversationId] = useState(() =>
+    globalThis.crypto?.randomUUID?.() ?? `assistant-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+  );
   const threadRef = useRef<HTMLDivElement | null>(null);
 
   const chatMutation = useMutation({
@@ -63,6 +65,14 @@ function AssistantPanel({ enabled }: AssistantPanelProps) {
     const trimmed = text.trim();
     if (!trimmed || chatMutation.isPending) return;
     chatMutation.mutate(trimmed);
+  };
+
+  const startNewConversation = () => {
+    const previousConversationId = conversationId;
+    void api.clearAssistantConversation(previousConversationId).catch(() => undefined);
+    setMessages([]);
+    setMessage('');
+    setConversationId(globalThis.crypto?.randomUUID?.() ?? `assistant-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`);
   };
 
   useEffect(() => {
@@ -103,6 +113,9 @@ function AssistantPanel({ enabled }: AssistantPanelProps) {
             </button>
             <button className="secondary-button small-button" onClick={() => setShowProductionCandidates((prev) => !prev)}>
               {showProductionCandidates ? 'Hide Production Candidates' : 'Production Candidates'}
+            </button>
+            <button className="secondary-button small-button" onClick={startNewConversation}>
+              New Conversation
             </button>
           </div>
 
@@ -247,6 +260,11 @@ function AssistantPanel({ enabled }: AssistantPanelProps) {
                   <p>{entry.text}</p>
                   {entry.response && (
                     <>
+                      {entry.response.raw.route?.followup && (
+                        <div className="assistant-followup-debug">
+                          Follow-up context: {entry.response.raw.route.followup.used_context ? 'used' : 'not used'}
+                        </div>
+                      )}
                       {!!entry.response.cards.length && (
                         <div className="assistant-card-grid">
                           {entry.response.cards.map((card) => (

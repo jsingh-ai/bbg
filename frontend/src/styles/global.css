@@ -642,6 +642,8 @@ p { color: var(--muted); margin-bottom: 0; }
 .assistant-toolbar {
   display: flex;
   justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
   margin-bottom: 14px;
 }
 .assistant-diagnostics {
@@ -741,6 +743,12 @@ p { color: var(--muted); margin-bottom: 0; }
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 10px;
   margin-top: 12px;
+}
+.assistant-followup-debug {
+  margin-top: 10px;
+  font-size: 0.76rem;
+  color: var(--muted);
+  letter-spacing: 0.02em;
 }
 .assistant-metric-card {
   border: 1px solid var(--line);

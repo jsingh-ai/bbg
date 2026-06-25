@@ -1,6 +1,7 @@
 import type {
   AssistantChatRequest,
   AssistantChatResponse,
+  AssistantConversationClearResponse,
   AssistantDiagnosticsResponse,
   AssistantProductionCandidatesResponse,
   AssistantProductionDebugResponse,
@@ -99,6 +100,11 @@ export const api = {
     }),
   assistantChat: (payload: AssistantChatRequest) =>
     request<AssistantChatResponse>('/api/assistant/chat', { method: 'POST', body: JSON.stringify(payload) }),
+  clearAssistantConversation: (conversationId: string) =>
+    request<AssistantConversationClearResponse>('/api/assistant/conversation/clear', {
+      method: 'POST',
+      body: JSON.stringify({ conversation_id: conversationId })
+    }),
   getAssistantDiagnostics: () => request<AssistantDiagnosticsResponse>('/api/assistant/diagnostics'),
   getAssistantProductionDebug: (timeRange = 'today') =>
     request<AssistantProductionDebugResponse>(`/api/assistant/production-debug?time_range=${encodeURIComponent(timeRange)}`),

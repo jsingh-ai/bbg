@@ -68,3 +68,7 @@ class AssistantChatRequest(BaseModel):
     message: str
     time_range: str | None = None
     conversation_id: str | None = None
+
+
+class AssistantConversationClearRequest(BaseModel):
+    conversation_id: str

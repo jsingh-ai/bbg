@@ -7,9 +7,21 @@ from datetime import datetime
 from typing import Any
 
 from ..config import get_settings
+from .assistant_context import (
+    apply_followup_context,
+    clear_conversation,
+    cleanup_old_conversations,
+    get_recent_turns,
+    remember_turn,
+)
 from .assistant_router import route_assistant_message
 from .assistant_taxonomy import resolve_assistant_taxonomy
 from .process_analysis import (
+    _is_explicit_alarm_context_request,
+    _is_explicit_counter_context_request,
+    _is_explicit_plc_context_request,
+    _is_explicit_speed_context_request,
+    _is_explicit_state_context_request,
     find_last_stop,
     get_assistant_diagnostics,
     get_most_changed_parameters,
@@ -18,10 +30,8 @@ from .process_analysis import (
     get_production_summary,
     get_stop_summary,
     get_values_around_stop,
-    _is_explicit_speed_request,
     parse_time_range,
     search_tags,
-    _is_explicit_system_request,
 )
 from .section_parser import parse_section_key
 
@@ -186,16 +196,34 @@ def _deterministic_answer(intent: str, raw: dict[str, Any]) -> str:
     if intent == "values_around_last_stop":
         after = raw.get("after_stop_effect") or []
         before = raw.get("before_stop_movement") or []
+        route = raw.get("route") or {}
+        speed_context = raw.get("context", {}).get("dependent_speed_changes") or []
+        machine_speed = raw.get("context", {}).get("machine_speed")
+        explicit_speed_context = bool(route.get("explicit_speed_context"))
+        suffix = " The last stop is still open." if raw.get("context", {}).get("stop_is_open_ended") else ""
         if not after and not before:
-            suffix = " The last stop is still open." if raw.get("context", {}).get("stop_is_open_ended") else ""
             stop_time = raw.get("stop_time") or "the detected stop time"
+            if explicit_speed_context and (machine_speed or speed_context):
+                return (
+                    f"The machine speed dropped to zero at {stop_time}. I kept speed and performance rows in context for this request. "
+                    f"No other ranked process variables met the selected thresholds.{suffix}"
+                )
             return (
                 f"The machine speed dropped to zero at {stop_time}. After filtering counters, alarms, PLC/IO, state/status values, dependent speeds, zero-range values, and the speed marker itself, "
                 f"I did not find other process variables that changed enough in the selected window.{suffix}"
             )
+        if explicit_speed_context:
+            before_label = f"{before[0]['label']} in {before[0]['section_key']}" if before else "n/a"
+            after_label = f"{after[0]['label']} in {after[0]['section_key']}" if after else "n/a"
+            return (
+                f"The machine speed dropped to zero at {raw.get('stop_time') or 'the detected stop time'}. "
+                f"I included machine speed and dependent speed/performance rows in the Speed / Performance Context table. "
+                f"The largest observed non-speed pre-stop movement was {before_label}. "
+                f"The largest observed non-speed post-stop effect was {after_label}. "
+                f"This is correlation around the stop, not proof of cause.{suffix}"
+            )
         after_label = f"{after[0]['label']} in {after[0]['section_key']}" if after else "n/a"
         before_label = f"{before[0]['label']} in {before[0]['section_key']}" if before else "n/a"
-        suffix = " The last stop is still open." if raw.get("context", {}).get("stop_is_open_ended") else ""
         return (
             f"Around the last stop, the largest observed pre-stop movement was {before_label}. "
             f"The largest observed post-stop effect was {after_label}. "
@@ -379,15 +407,22 @@ def _format_most_changed_response(raw: dict[str, Any]) -> tuple[list[dict[str, A
                 ],
             )
         )
-    if context.get("dependent_speed_changes"):
+    if context.get("dependent_speed_changes") or context.get("machine_speed"):
+        speed_rows = []
+        if context.get("machine_speed"):
+            speed = context["machine_speed"]
+            speed_rows.append([speed.get("section_key"), speed.get("label"), speed.get("min"), speed.get("max"), speed.get("range"), speed.get("avg"), speed.get("sample_count")])
+        speed_rows.extend(
+            [
+                [item.get("section_key"), item.get("label"), item.get("min"), item.get("max"), item.get("range"), item.get("avg"), item.get("sample_count")]
+                for item in context.get("dependent_speed_changes", [])
+            ]
+        )
         tables.append(
             _build_table(
                 "Speed / Performance Context",
                 ["Section", "Variable", "Min", "Max", "Range", "Avg", "Samples"],
-                [
-                    [item.get("section_key"), item.get("label"), item.get("min"), item.get("max"), item.get("range"), item.get("avg"), item.get("sample_count")]
-                    for item in context.get("dependent_speed_changes", [])
-                ],
+                speed_rows,
             )
         )
     return cards, tables
@@ -463,23 +498,40 @@ def _format_around_stop_response(raw: dict[str, Any]) -> tuple[list[dict[str, An
                 ],
             )
         )
-    if context.get("dependent_speed_changes"):
+    if context.get("dependent_speed_changes") or context.get("machine_speed"):
+        speed_rows = []
+        if context.get("machine_speed"):
+            speed = context["machine_speed"]
+            speed_rows.append(
+                [
+                    speed.get("section_key"),
+                    speed.get("label"),
+                    speed.get("before_avg"),
+                    speed.get("after_avg"),
+                    None,
+                    speed.get("before_stop_movement"),
+                    speed.get("after_stop_effect"),
+                ]
+            )
+        speed_rows.extend(
+            [
+                [
+                    item.get("section_key"),
+                    item.get("label"),
+                    item.get("before_avg"),
+                    item.get("after_avg"),
+                    item.get("delta_avg"),
+                    item.get("before_stop_movement"),
+                    item.get("after_stop_effect"),
+                ]
+                for item in context.get("dependent_speed_changes", [])
+            ]
+        )
         tables.append(
             _build_table(
                 "Speed / Performance Context",
                 ["Section", "Variable", "Before Avg", "After Avg", "Delta Avg", "Before Movement", "After Effect"],
-                [
-                    [
-                        item.get("section_key"),
-                        item.get("label"),
-                        item.get("before_avg"),
-                        item.get("after_avg"),
-                        item.get("delta_avg"),
-                        item.get("before_stop_movement"),
-                        item.get("after_stop_effect"),
-                    ]
-                    for item in context.get("dependent_speed_changes", [])
-                ],
+                speed_rows,
             )
         )
     return cards, tables
@@ -526,12 +578,35 @@ def _format_fallback_response() -> tuple[list[dict[str, Any]], list[dict[str, An
 
 
 def handle_assistant_chat(message: str, time_range: str | None = None, conversation_id: str | None = None) -> dict[str, Any]:
+    settings = get_settings()
     route = route_assistant_message(message, time_range)
+    if settings.assistant_context_enabled and conversation_id:
+        cleanup_old_conversations(settings.assistant_context_max_age_minutes)
+        recent_turns = get_recent_turns(conversation_id)
+        route = apply_followup_context(message, route, recent_turns)
+        if "followup" in route:
+            route["followup"]["conversation_id"] = conversation_id
+    else:
+        route["followup"] = {
+            "used_context": False,
+            "reason": "context_disabled_or_missing_conversation_id",
+            "conversation_id": conversation_id,
+            "history_turns_available": 0,
+            "previous_intent": None,
+            "previous_time_range": None,
+            "inherited_intent": None,
+            "inherited_time_range": None,
+            "inherited_resolved_system": None,
+            "inherited_section_terms": [],
+        }
     intent = str(route["intent"])
     range_key = str(route["time_range"])
     selected_range = parse_time_range(range_key)
-    explicit_system_request = _is_explicit_system_request(message, route.get("resolved_system"))
-    explicit_speed_request = _is_explicit_speed_request(message)
+    explicit_speed_context = bool(route.get("explicit_speed_context")) or _is_explicit_speed_context_request(message)
+    explicit_state_context = bool(route.get("explicit_state_context")) or _is_explicit_state_context_request(message)
+    explicit_alarm_context = bool(route.get("explicit_alarm_context")) or _is_explicit_alarm_context_request(message, route.get("resolved_system"))
+    explicit_counter_context = bool(route.get("explicit_counter_context")) or _is_explicit_counter_context_request(message)
+    explicit_plc_context = bool(route.get("explicit_plc_context")) or _is_explicit_plc_context_request(message, route.get("resolved_system"))
     raw: dict[str, Any]
 
     if intent == "production_summary":
@@ -551,10 +626,12 @@ def handle_assistant_chat(message: str, time_range: str | None = None, conversat
         raw = get_most_changed_parameters(
             selected_range,
             allowed_tag_ids=[int(item["tag_id"]) for item in matching_tags] if matching_tags else None,
-            apply_process_filters=not explicit_system_request,
-            explicit_system_request=explicit_system_request,
-            include_speed_in_ranking=explicit_speed_request,
-            message=message,
+            apply_process_filters=True,
+            explicit_alarm_context=explicit_alarm_context,
+            explicit_counter_context=explicit_counter_context,
+            explicit_plc_context=explicit_plc_context,
+            explicit_state_context=explicit_state_context,
+            explicit_speed_context=explicit_speed_context,
         )
         if route.get("resolved_system"):
             raw["section"] = route.get("resolved_system")
@@ -582,10 +659,13 @@ def handle_assistant_chat(message: str, time_range: str | None = None, conversat
                 raw = get_values_around_stop(
                     stop_time,
                     allowed_tag_ids=[int(item["tag_id"]) for item in matching_tags] if matching_tags else None,
-                    apply_process_filters=not explicit_system_request,
-                    explicit_system_request=explicit_system_request,
+                    apply_process_filters=True,
+                    explicit_alarm_context=explicit_alarm_context,
+                    explicit_counter_context=explicit_counter_context,
+                    explicit_plc_context=explicit_plc_context,
+                    explicit_state_context=explicit_state_context,
                     context={"stop_is_open_ended": bool(last_stop.get("open_ended"))},
-                    message=message,
+                    explicit_speed_context=explicit_speed_context,
                 )
                 cards, tables = _format_around_stop_response(raw)
     elif intent == "section_summary":
@@ -599,10 +679,12 @@ def handle_assistant_chat(message: str, time_range: str | None = None, conversat
             "most_changed": get_most_changed_parameters(
                 selected_range,
                 allowed_tag_ids=allowed_tag_ids or None,
-                apply_process_filters=not explicit_system_request,
-                explicit_system_request=explicit_system_request,
-                include_speed_in_ranking=explicit_speed_request,
-                message=message,
+                apply_process_filters=True,
+                explicit_alarm_context=explicit_alarm_context,
+                explicit_counter_context=explicit_counter_context,
+                explicit_plc_context=explicit_plc_context,
+                explicit_state_context=explicit_state_context,
+                explicit_speed_context=explicit_speed_context,
             ),
         }
         cards, tables = _format_section_response(raw)
@@ -612,6 +694,7 @@ def handle_assistant_chat(message: str, time_range: str | None = None, conversat
 
     raw["route"] = route
     answer = _openai_answer(message, intent, raw) or _deterministic_answer(intent, raw)
+    remember_turn(conversation_id, message, route, raw)
     return {
         "answer": answer,
         "intent": intent,
@@ -638,3 +721,8 @@ def get_production_candidates_response(time_range: str | None = None, limit: int
 
 def get_assistant_version_response() -> dict[str, Any]:
     return _assistant_version_payload()
+
+
+def clear_assistant_conversation(conversation_id: str | None) -> dict[str, Any]:
+    clear_conversation(conversation_id)
+    return {"ok": True, "conversation_id": conversation_id}

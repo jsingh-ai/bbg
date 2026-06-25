@@ -178,13 +178,47 @@ export interface AssistantChatRequest {
   conversation_id?: string;
 }
 
+export interface AssistantFollowupDebug {
+  used_context: boolean;
+  reason: string;
+  conversation_id?: string | null;
+  history_turns_available: number;
+  previous_intent?: string | null;
+  previous_time_range?: string | null;
+  inherited_intent?: string | null;
+  inherited_time_range?: string | null;
+  inherited_resolved_system?: string | null;
+  inherited_section_terms: string[];
+}
+
+export interface AssistantRouteDebug {
+  intent?: string;
+  time_range?: string;
+  compare_to?: string | null;
+  resolved_system?: string | null;
+  section_terms?: string[];
+  matched_alias?: string | null;
+  followup?: AssistantFollowupDebug;
+  [key: string]: unknown;
+}
+
+export interface AssistantRawResponse {
+  route?: AssistantRouteDebug;
+  [key: string]: unknown;
+}
+
 export interface AssistantChatResponse {
   answer: string;
   intent: string;
   conversation_id?: string | null;
   cards: AssistantCard[];
   tables: AssistantTable[];
-  raw: Record<string, unknown>;
+  raw: AssistantRawResponse;
+}
+
+export interface AssistantConversationClearResponse {
+  ok: boolean;
+  conversation_id?: string | null;
 }
 
 export interface AssistantTagSuggestion {

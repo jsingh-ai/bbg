@@ -50,6 +50,9 @@ class Settings(BaseSettings):
     assistant_state_context_enabled: bool = True
     assistant_dependent_speed_terms: str = "current speed,cycle performance"
     assistant_speed_context_enabled: bool = True
+    assistant_context_enabled: bool = True
+    assistant_context_max_turns: int = 5
+    assistant_context_max_age_minutes: int = 120
 
     cors_origins: str = Field(default="http://localhost:5173,http://127.0.0.1:5173")
 

@@ -10,6 +10,78 @@ def _has_any(normalized: str, phrases: tuple[str, ...]) -> bool:
     return any(phrase in normalized for phrase in phrases)
 
 
+def _explicit_speed_context(normalized: str) -> bool:
+    return _has_any(
+        normalized,
+        (
+            "speed",
+            "speeds",
+            "currentspeed",
+            "machinespeed",
+            "cycleperformance",
+            "performance",
+            "drivespeed",
+            "motion",
+            "velocity",
+        ),
+    )
+
+
+def _explicit_state_context(normalized: str) -> bool:
+    return _has_any(
+        normalized,
+        (
+            "state",
+            "status",
+            "mode",
+            "condition",
+            "runningcondition",
+        ),
+    )
+
+
+def _explicit_alarm_context(normalized: str) -> bool:
+    return _has_any(
+        normalized,
+        (
+            "alarm",
+            "alarms",
+            "fault",
+            "faults",
+            "warning",
+            "warnings",
+            "maxseverity",
+        ),
+    )
+
+
+def _explicit_counter_context(normalized: str) -> bool:
+    return _has_any(
+        normalized,
+        (
+            "counter",
+            "counters",
+            "count",
+            "counts",
+            "numberof",
+            "packagecounter",
+        ),
+    )
+
+
+def _explicit_plc_context(normalized: str) -> bool:
+    return _has_any(
+        normalized,
+        (
+            "plc",
+            "io",
+            "i/o",
+            "systemhealth",
+            "controller",
+        ),
+    )
+
+
 def _infer_time_range_key(message: str, explicit: str | None) -> str:
     if explicit:
         return explicit
@@ -32,6 +104,11 @@ def route_assistant_message(message: str, explicit_time_range: str | None = None
     taxonomy = resolve_assistant_taxonomy(message)
     time_range = _infer_time_range_key(message, explicit_time_range)
     compare_to: str | None = None
+    explicit_speed_context = _explicit_speed_context(normalized)
+    explicit_state_context = _explicit_state_context(normalized)
+    explicit_alarm_context = _explicit_alarm_context(normalized)
+    explicit_counter_context = _explicit_counter_context(normalized)
+    explicit_plc_context = _explicit_plc_context(normalized)
 
     if _has_any(
         normalized,
@@ -63,6 +140,11 @@ def route_assistant_message(message: str, explicit_time_range: str | None = None
             "time_range": time_range,
             "compare_to": compare_to,
             "matched_rule": "values_around_last_stop",
+            "explicit_speed_context": explicit_speed_context,
+            "explicit_state_context": explicit_state_context,
+            "explicit_alarm_context": explicit_alarm_context,
+            "explicit_counter_context": explicit_counter_context,
+            "explicit_plc_context": explicit_plc_context,
             **taxonomy,
         }
 
@@ -84,6 +166,11 @@ def route_assistant_message(message: str, explicit_time_range: str | None = None
             "time_range": time_range,
             "compare_to": compare_to,
             "matched_rule": "most_changed_parameters",
+            "explicit_speed_context": explicit_speed_context,
+            "explicit_state_context": explicit_state_context,
+            "explicit_alarm_context": explicit_alarm_context,
+            "explicit_counter_context": explicit_counter_context,
+            "explicit_plc_context": explicit_plc_context,
             **taxonomy,
         }
 
@@ -113,6 +200,11 @@ def route_assistant_message(message: str, explicit_time_range: str | None = None
             "time_range": time_range,
             "compare_to": compare_to,
             "matched_rule": "section_summary",
+            "explicit_speed_context": explicit_speed_context,
+            "explicit_state_context": explicit_state_context,
+            "explicit_alarm_context": explicit_alarm_context,
+            "explicit_counter_context": explicit_counter_context,
+            "explicit_plc_context": explicit_plc_context,
             **taxonomy,
         }
 
@@ -132,6 +224,11 @@ def route_assistant_message(message: str, explicit_time_range: str | None = None
             "time_range": time_range,
             "compare_to": compare_to,
             "matched_rule": "stop_summary",
+            "explicit_speed_context": explicit_speed_context,
+            "explicit_state_context": explicit_state_context,
+            "explicit_alarm_context": explicit_alarm_context,
+            "explicit_counter_context": explicit_counter_context,
+            "explicit_plc_context": explicit_plc_context,
             **taxonomy,
         }
 
@@ -141,6 +238,11 @@ def route_assistant_message(message: str, explicit_time_range: str | None = None
             "time_range": time_range,
             "compare_to": compare_to,
             "matched_rule": "production_summary",
+            "explicit_speed_context": explicit_speed_context,
+            "explicit_state_context": explicit_state_context,
+            "explicit_alarm_context": explicit_alarm_context,
+            "explicit_counter_context": explicit_counter_context,
+            "explicit_plc_context": explicit_plc_context,
             **taxonomy,
         }
 
@@ -149,5 +251,10 @@ def route_assistant_message(message: str, explicit_time_range: str | None = None
         "time_range": time_range,
         "compare_to": compare_to,
         "matched_rule": "fallback",
+        "explicit_speed_context": explicit_speed_context,
+        "explicit_state_context": explicit_state_context,
+        "explicit_alarm_context": explicit_alarm_context,
+        "explicit_counter_context": explicit_counter_context,
+        "explicit_plc_context": explicit_plc_context,
         **taxonomy,
     }
