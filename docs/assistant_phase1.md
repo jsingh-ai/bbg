@@ -38,6 +38,9 @@ ASSISTANT_BAD_BAGS_TAG_PATH=Global PV/info/state/shift: bad
 ASSISTANT_RUNNING_SPEED_THRESHOLD=0
 ASSISTANT_MIN_STOP_MINUTES=1
 ASSISTANT_MAX_ROWS=5000
+ASSISTANT_EXCLUDED_SECTION_KEYS=i,alarm system
+ASSISTANT_EXCLUDED_PATH_CONTAINS=/i/o/,alarm system
+ASSISTANT_EXCLUDED_TAG_TERMS=counter,count,number of,good,bad,total,shift,job,active alarms,max severity,storageWear
 ```
 
 Notes:
@@ -69,6 +72,8 @@ The response shows:
 - latest and oldest history timestamps
 - compact suggestions when a configured tag path does not match a real tag
 
+Chat responses also include `raw.route`, which shows the deterministic router decision, resolved system, section terms, time range, and matched rule.
+
 ### Missing Tag Warnings
 
 If a configured production or speed tag is missing:
@@ -87,6 +92,45 @@ If diagnostics shows a missing required tag:
 2. update the relevant `.env` setting
 3. restart the backend
 4. rerun `/api/assistant/diagnostics`
+
+## Process Taxonomy
+
+The assistant uses a deterministic taxonomy for known systems and sections before any language-model wording layer.
+
+Examples:
+
+- `unwinder` and `winder` resolve to unwinder sections
+- `dancer` and `dance` resolve to dancer sections
+- `storage cylinder` resolves to storage cylinder sections
+- `format` and `machine speed` resolve to format sections
+- `plc`, `io`, `i/o`, `system health`, and `plc temperature` resolve to the PLC/I/O/system group
+
+This prevents ordinary short words from incorrectly resolving to section `i`.
+
+## Process Filters
+
+For process-analysis questions, the assistant applies default filters to suppress system-health noise, counters, and zero-range rows.
+
+Default filter env vars:
+
+```env
+ASSISTANT_EXCLUDED_SECTION_KEYS=i,alarm system
+ASSISTANT_EXCLUDED_PATH_CONTAINS=/i/o/,alarm system
+ASSISTANT_EXCLUDED_TAG_TERMS=counter,count,number of,good,bad,total,shift,job,active alarms,max severity,storageWear
+```
+
+These filters apply to:
+
+- most changed parameter analysis
+- values around stop analysis
+- section summaries
+
+They do not apply to:
+
+- production summary
+- production debug
+- production candidates
+- explicit PLC / I/O / system-health style questions
 
 ## Production Calculation
 
@@ -120,6 +164,19 @@ This shows:
 - positive-delta sum used for production
 - raw first-to-last delta
 - reset count detected in the window
+
+You can also inspect likely production counter candidates with:
+
+```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/assistant/production-candidates" | ConvertTo-Json -Depth 20
+```
+
+Use that endpoint to tune:
+
+- `ASSISTANT_GOOD_BAGS_TAG_PATH`
+- `ASSISTANT_BAD_BAGS_TAG_PATH`
+
+If bad delta is much larger than good delta or the bad rate is extremely high, the assistant now returns sanity warnings so you can verify the configured production counters.
 
 Diagnostics suggestions are not automatically used for calculations. This is intentional so production and downtime analytics never silently switch to the wrong OPC tag.
 
@@ -208,6 +265,10 @@ Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/assistant/production-debug" | 
 ```
 
 ```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/assistant/production-candidates" | ConvertTo-Json -Depth 20
+```
+
+```powershell
 Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/assistant/chat" -Method Post -ContentType "application/json" -Body '{"message":"How was production today?"}' | ConvertTo-Json -Depth 20
 ```
 
@@ -224,9 +285,13 @@ Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/assistant/chat" -Method Post -
 ```
 
 ```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/assistant/chat" -Method Post -ContentType "application/json" -Body '{"message":"What happened in the unwinder today?"}' | ConvertTo-Json -Depth 20
+```
+
+```powershell
 Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/assistant/chat" -Method Post -ContentType "application/json" -Body '{"message":"What changed around the last stop?"}' | ConvertTo-Json -Depth 20
 ```
 
 ```powershell
-Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/assistant/chat" -Method Post -ContentType "application/json" -Body '{"message":"What happened in the unwinder today?"}' | ConvertTo-Json -Depth 20
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/assistant/chat" -Method Post -ContentType "application/json" -Body '{"message":"What happened in the dancer today?"}' | ConvertTo-Json -Depth 20
 ```

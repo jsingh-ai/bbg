@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     assistant_bad_bags_tag_path: str = "Global PV/info/state/shift: bad"
     assistant_running_speed_threshold: float = 0
     assistant_min_stop_minutes: int = 1
+    assistant_excluded_section_keys: str = "i,alarm system"
+    assistant_excluded_path_contains: str = "/i/o/,alarm system"
+    assistant_excluded_tag_terms: str = "counter,count,number of,good,bad,total,shift,job,active alarms,max severity,storageWear"
 
     cors_origins: str = Field(default="http://localhost:5173,http://127.0.0.1:5173")
 
@@ -64,6 +67,18 @@ class Settings(BaseSettings):
     @property
     def assistant_llm_enabled(self) -> bool:
         return bool(self.assistant_enabled and self.openai_api_key.strip())
+
+    @property
+    def assistant_excluded_section_key_list(self) -> list[str]:
+        return [item.strip().lower() for item in self.assistant_excluded_section_keys.split(",") if item.strip()]
+
+    @property
+    def assistant_excluded_path_contains_list(self) -> list[str]:
+        return [item.strip().lower() for item in self.assistant_excluded_path_contains.split(",") if item.strip()]
+
+    @property
+    def assistant_excluded_tag_term_list(self) -> list[str]:
+        return [item.strip().lower() for item in self.assistant_excluded_tag_terms.split(",") if item.strip()]
 
 
 @lru_cache

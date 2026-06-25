@@ -5,38 +5,22 @@ from datetime import datetime
 from typing import Any
 
 from ..config import get_settings
+from .assistant_router import route_assistant_message
+from .assistant_taxonomy import resolve_assistant_taxonomy
 from .process_analysis import (
-    TimeRange,
     find_last_stop,
     get_assistant_diagnostics,
     get_most_changed_parameters,
+    get_production_candidates,
     get_production_debug,
     get_production_summary,
     get_stop_summary,
     get_values_around_stop,
-    list_sections,
     parse_time_range,
     search_tags,
+    _is_explicit_system_request,
 )
-from .section_parser import normalize_key
-
-
-SECTION_HINTS = (
-    "unwinder",
-    "dancer",
-    "dance",
-    "storage",
-    "storagecylinder",
-    "format",
-    "forming",
-    "cylinder",
-    "tension",
-    "web",
-    "seal",
-    "knife",
-    "temperature",
-    "pressure",
-)
+from .section_parser import parse_section_key
 
 
 def _build_cards(items: list[tuple[str, Any, str | None]]) -> list[dict[str, Any]]:
@@ -47,124 +31,48 @@ def _build_table(title: str, columns: list[str], rows: list[list[Any]]) -> dict[
     return {"title": title, "columns": columns, "rows": rows}
 
 
-def _has_any(normalized: str, phrases: tuple[str, ...]) -> bool:
-    return any(phrase in normalized for phrase in phrases)
-
-
-def _infer_time_range_key(message: str, explicit: str | None) -> str:
-    if explicit:
-        return explicit
-    normalized = normalize_key(message)
-    if "comparetodaytoyesterday" in normalized or "todayvsyesterday" in normalized:
-        return "today"
-    if "yesterday" in normalized:
+def _comparison_range_for_route(route: dict[str, Any], message: str) -> str | None:
+    if route.get("compare_to"):
+        return str(route["compare_to"])
+    if route.get("intent") == "production_summary" and route.get("time_range") == "today":
         return "yesterday"
-    if "lastweek" in normalized or "week" in normalized:
-        return "last_week"
-    if "last24hours" in normalized or "24hours" in normalized:
-        return "last_24_hours"
-    if "lasthour" in normalized or "hour" in normalized:
-        return "last_hour"
-    return "today"
-
-
-def _compare_range_for(message: str, selected_range: TimeRange) -> TimeRange | None:
-    normalized = normalize_key(message)
-    if selected_range.key == "today" and (
-        "compare" in normalized
-        or "todayvsyesterday" in normalized
-        or _has_any(
-            normalized,
-            (
-                "howwasproductiontoday",
-                "productiontoday",
-                "bagstoday",
-                "goodbags",
-                "badbags",
-                "shiftproduction",
-            ),
-        )
-    ):
-        return parse_time_range("yesterday")
     return None
 
 
-def _match_section(message: str) -> str | None:
-    normalized = normalize_key(message)
-    for section in list_sections():
-        if normalize_key(section) and normalize_key(section) in normalized:
-            return section
-    for hint in SECTION_HINTS:
-        if hint in normalized:
-            for section in list_sections():
-                if hint in normalize_key(section):
-                    return section
+def _resolve_matching_tags(route: dict[str, Any], message: str, limit: int = 50) -> list[dict[str, Any]]:
+    search_terms = list(route.get("section_terms") or [])
+    if not search_terms and route.get("resolved_system"):
+        taxonomy = resolve_assistant_taxonomy(message)
+        search_terms = list(taxonomy.get("section_terms") or [])
+    if not search_terms:
+        return []
+    matched: dict[int, dict[str, Any]] = {}
+    for term in search_terms:
+        for item in search_tags(term, limit=limit):
+            section_key = str(item.get("section_key") or parse_section_key(item.get("opc_path")) or "")
+            if term.lower() not in section_key.lower():
+                continue
+            matched[int(item["tag_id"])] = item
+    return list(matched.values())
+
+
+def _section_label(route: dict[str, Any], matching_tags: list[dict[str, Any]]) -> str | None:
+    sections = []
+    seen: set[str] = set()
+    for item in matching_tags:
+        section_key = str(item.get("section_key") or "")
+        if section_key and section_key not in seen:
+            seen.add(section_key)
+            sections.append(section_key)
+    if sections:
+        if len(sections) == 1:
+            return sections[0]
+        if len(sections) <= 3:
+            return ", ".join(sections)
+        return f"{len(sections)} matched sections"
+    if route.get("resolved_system"):
+        return str(route["resolved_system"])
     return None
-
-
-def _intent_for_message(message: str) -> str:
-    normalized = normalize_key(message)
-    if (
-        ("changedaround" in normalized and "stop" in normalized)
-        or ("changedbefore" in normalized and "stop" in normalized)
-        or ("whatchanged" in normalized and "stopped" in normalized)
-        or _has_any(
-            normalized,
-            (
-                "aroundthelaststop",
-                "beforethelaststop",
-                "whenspeedwentto0",
-                "whenspeedwentzero",
-            ),
-        )
-    ):
-        return "values_around_last_stop"
-    if _has_any(
-        normalized,
-        (
-            "changedthemost",
-            "changesthemost",
-            "mostchanged",
-            "unstable",
-            "variation",
-            "uncertainty",
-            "movingthemost",
-            "bouncing",
-        ),
-    ):
-        return "most_changed_parameters"
-    if _match_section(message):
-        return "section_summary"
-    if _has_any(
-        normalized,
-        (
-            "howmanystops",
-            "stopcount",
-            "downtime",
-            "downtime",
-            "longeststop",
-            "machinestopped",
-        ),
-    ):
-        return "stop_summary"
-    if _has_any(
-        normalized,
-        (
-            "production",
-            "goodbags",
-            "badbags",
-            "scrap",
-            "reject",
-            "rejects",
-            "quality",
-            "comparetoday",
-            "todayvsyesterday",
-            "shiftproduction",
-            "bagstoday",
-        ),
-    ):
-        return "production_summary"
-    return "fallback"
 
 
 def _deterministic_answer(intent: str, raw: dict[str, Any]) -> str:
@@ -205,6 +113,8 @@ def _deterministic_answer(intent: str, raw: dict[str, Any]) -> str:
                 answer += f" I cannot compare to yesterday because there are no samples from yesterday. Your history starts at {oldest}."
             else:
                 answer += f" I could not complete the comparison range because {comparison['error'].get('message', 'comparison data was unavailable')}."
+        if raw.get("warnings"):
+            answer += f" Warning: {raw['warnings'][0]}"
         return answer
 
     if intent == "stop_summary":
@@ -223,7 +133,7 @@ def _deterministic_answer(intent: str, raw: dict[str, Any]) -> str:
     if intent == "most_changed_parameters":
         top = raw.get("parameters") or []
         if not top:
-            return "No numeric parameter movement was found for that range."
+            return "No visible process parameter movement was found for that range after applying the default filters."
         labels = ", ".join(item["label"] for item in top[:3])
         prefix = f"In {raw['section']}, " if raw.get("section") else ""
         return f"{prefix}the most changed parameters were {labels}."
@@ -235,14 +145,14 @@ def _deterministic_answer(intent: str, raw: dict[str, Any]) -> str:
             return "No changed numeric process tags were found in the window around the last stop."
         after_label = after[0]["label"] if after else "n/a"
         before_label = before[0]["label"] if before else "n/a"
-        return f"Around the last stop, the strongest pre-stop movement was {before_label} and the strongest post-stop effect was {after_label}."
+        suffix = " The last stop is still open." if raw.get("context", {}).get("stop_is_open_ended") else ""
+        return f"Around the last stop, the strongest pre-stop movement was {before_label} and the strongest post-stop effect was {after_label}.{suffix}"
 
     if intent == "section_summary":
         top = raw.get("most_changed", {}).get("parameters") or []
-        return (
-            f"For section {raw.get('section')}, I found {len(raw.get('matching_tags') or [])} matching tags. "
-            f"The most changed parameters were {', '.join(item['label'] for item in top[:3]) or 'not enough data'}."
-        )
+        section_label = raw.get("section_label") or raw.get("section") or "the requested section"
+        prefix = "For sections" if "," in str(section_label) else "For"
+        return f"{prefix} {section_label}, the most changed parameters were {', '.join(item['label'] for item in top[:3]) or 'not enough data'}."
 
     return (
         "I was not confident enough to choose an analysis automatically. "
@@ -306,6 +216,8 @@ def _format_production_response(raw: dict[str, Any]) -> tuple[list[dict[str, Any
         ]
     )
     tables: list[dict[str, Any]] = []
+    if raw.get("warnings"):
+        tables.append(_build_table("Warnings", ["Message"], [[warning] for warning in raw["warnings"]]))
     comparison = raw.get("comparison")
     if comparison and not comparison.get("error") and "range" in comparison:
         tables.append(
@@ -368,8 +280,8 @@ def _format_stop_response(raw: dict[str, Any]) -> tuple[list[dict[str, Any]], li
 
 def _format_most_changed_response(raw: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     top = raw.get("parameters") or []
-    cards = _build_cards([("Section", raw.get("section") or "All", None), ("Variables Ranked", len(top), None)])
-    tables = [
+    cards = _build_cards([("Section", raw.get("section") or "Process", None), ("Variables Ranked", len(top), None)])
+    tables: list[dict[str, Any]] = [
         _build_table(
             "Most Changed Parameters",
             ["Tag", "Section", "Min", "Max", "Range", "Avg", "Samples"],
@@ -387,6 +299,14 @@ def _format_most_changed_response(raw: dict[str, Any]) -> tuple[list[dict[str, A
             ],
         )
     ]
+    excluded = raw.get("excluded_counts") or {}
+    tables.append(
+        _build_table(
+            "Excluded Rows",
+            ["Excluded Section", "Excluded Tag Term", "Zero Range"],
+            [[excluded.get("excluded_section", 0), excluded.get("excluded_tag_term", 0), excluded.get("zero_range", 0)]],
+        )
+    )
     return cards, tables
 
 
@@ -411,7 +331,7 @@ def _format_around_stop_response(raw: dict[str, Any]) -> tuple[list[dict[str, An
                     item.get("before_avg"),
                     item.get("after_avg"),
                     item.get("before_stop_movement"),
-                    item.get("movement_score"),
+                    item.get("before_movement_score"),
                 ]
                 for item in raw.get("before_stop_movement", [])
             ],
@@ -426,20 +346,28 @@ def _format_around_stop_response(raw: dict[str, Any]) -> tuple[list[dict[str, An
                     item.get("before_avg"),
                     item.get("after_avg"),
                     item.get("after_stop_effect"),
-                    item.get("movement_score"),
+                    item.get("after_effect_score"),
                 ]
                 for item in raw.get("after_stop_effect", [])
             ],
         ),
     ]
+    excluded = raw.get("excluded_counts") or {}
+    tables.append(
+        _build_table(
+            "Excluded Rows",
+            ["Excluded Section", "Excluded Tag Term", "Zero Range"],
+            [[excluded.get("excluded_section", 0), excluded.get("excluded_tag_term", 0), excluded.get("zero_range", 0)]],
+        )
+    )
     return cards, tables
 
 
 def _format_section_response(raw: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     matching_tags = raw.get("matching_tags") or []
     most_changed = raw.get("most_changed", {}).get("parameters") or []
-    cards = _build_cards([("Section", raw.get("section") or "--", None), ("Matching Tags", len(matching_tags), None), ("Ranked Variables", len(most_changed), None)])
-    tables = [
+    cards = _build_cards([("Section", raw.get("section_label") or raw.get("section") or "--", None), ("Matching Tags", len(matching_tags), None), ("Ranked Variables", len(most_changed), None)])
+    tables: list[dict[str, Any]] = [
         _build_table("Matching Tags", ["Label", "Section", "OPC Path"], [[item.get("label"), item.get("section_key"), item.get("opc_path")] for item in matching_tags[:20]]),
         _build_table(
             "Most Changed In Section",
@@ -447,6 +375,14 @@ def _format_section_response(raw: dict[str, Any]) -> tuple[list[dict[str, Any]],
             [[item.get("label"), item.get("avg_value"), item.get("min_value"), item.get("max_value"), item.get("range_value"), item.get("movement_score")] for item in most_changed],
         ),
     ]
+    excluded = raw.get("most_changed", {}).get("excluded_counts") or {}
+    tables.append(
+        _build_table(
+            "Excluded Rows",
+            ["Excluded Section", "Excluded Tag Term", "Zero Range"],
+            [[excluded.get("excluded_section", 0), excluded.get("excluded_tag_term", 0), excluded.get("zero_range", 0)]],
+        )
+    )
     return cards, tables
 
 
@@ -468,13 +404,16 @@ def _format_fallback_response() -> tuple[list[dict[str, Any]], list[dict[str, An
 
 
 def handle_assistant_chat(message: str, time_range: str | None = None, conversation_id: str | None = None) -> dict[str, Any]:
-    intent = _intent_for_message(message)
-    range_key = _infer_time_range_key(message, time_range)
+    route = route_assistant_message(message, time_range)
+    intent = str(route["intent"])
+    range_key = str(route["time_range"])
     selected_range = parse_time_range(range_key)
+    explicit_system_request = _is_explicit_system_request(message, route.get("resolved_system"))
     raw: dict[str, Any]
 
     if intent == "production_summary":
-        comparison_range = _compare_range_for(message, selected_range)
+        comparison_key = _comparison_range_for_route(route, message)
+        comparison_range = parse_time_range(comparison_key) if comparison_key else None
         raw = get_production_summary(selected_range, comparison_range)
         cards, tables = _format_production_response(raw)
     elif intent == "stop_summary":
@@ -485,8 +424,15 @@ def handle_assistant_chat(message: str, time_range: str | None = None, conversat
     elif intent == "most_changed_parameters":
         if range_key == "today":
             selected_range = parse_time_range("last_hour")
-        section = _match_section(message)
-        raw = get_most_changed_parameters(selected_range, section=section)
+        matching_tags = _resolve_matching_tags(route, message, limit=50)
+        raw = get_most_changed_parameters(
+            selected_range,
+            allowed_tag_ids=[int(item["tag_id"]) for item in matching_tags] if matching_tags else None,
+            apply_process_filters=not explicit_system_request,
+            explicit_system_request=explicit_system_request,
+        )
+        if route.get("resolved_system"):
+            raw["section"] = route.get("resolved_system")
         cards, tables = _format_most_changed_response(raw)
     elif intent == "values_around_last_stop":
         stop_range = parse_time_range("last_24_hours" if range_key == "today" else range_key)
@@ -502,25 +448,41 @@ def handle_assistant_chat(message: str, time_range: str | None = None, conversat
                     "before_stop_movement": [],
                     "after_stop_effect": [],
                     "error": {"code": "no_stop_found", "message": "No stop was found in the selected range."},
+                    "route": route,
                 }
                 cards, tables = _format_around_stop_response(raw)
             else:
-                section = _match_section(message)
+                matching_tags = _resolve_matching_tags(route, message, limit=50)
                 stop_time = datetime.fromisoformat(str(last_stop["start"]))
-                raw = get_values_around_stop(stop_time, section=section)
+                raw = get_values_around_stop(
+                    stop_time,
+                    allowed_tag_ids=[int(item["tag_id"]) for item in matching_tags] if matching_tags else None,
+                    apply_process_filters=not explicit_system_request,
+                    explicit_system_request=explicit_system_request,
+                    context={"stop_is_open_ended": bool(last_stop.get("open_ended"))},
+                )
                 cards, tables = _format_around_stop_response(raw)
     elif intent == "section_summary":
-        section = _match_section(message)
+        matching_tags = _resolve_matching_tags(route, message, limit=50)
+        allowed_tag_ids = [int(item["tag_id"]) for item in matching_tags]
+        section = route.get("section_terms", [None])[0] if route.get("section_terms") else None
         raw = {
-            "section": section,
-            "matching_tags": search_tags(section or message, limit=20),
-            "most_changed": get_most_changed_parameters(selected_range, section=section),
+            "section": route.get("resolved_system") or section,
+            "section_label": _section_label(route, matching_tags),
+            "matching_tags": matching_tags[:20],
+            "most_changed": get_most_changed_parameters(
+                selected_range,
+                allowed_tag_ids=allowed_tag_ids or None,
+                apply_process_filters=not explicit_system_request,
+                explicit_system_request=explicit_system_request,
+            ),
         }
         cards, tables = _format_section_response(raw)
     else:
         raw = {"suggested_prompts": True}
         cards, tables = _format_fallback_response()
 
+    raw["route"] = route
     answer = _openai_answer(message, intent, raw) or _deterministic_answer(intent, raw)
     return {
         "answer": answer,
@@ -538,3 +500,7 @@ def get_assistant_diagnostics_response() -> dict[str, Any]:
 
 def get_production_debug_response(time_range: str | None = None) -> dict[str, Any]:
     return get_production_debug(parse_time_range(time_range or "today"))
+
+
+def get_production_candidates_response(time_range: str | None = None, limit: int = 50) -> dict[str, Any]:
+    return get_production_candidates(parse_time_range(time_range or "today"), limit=limit)

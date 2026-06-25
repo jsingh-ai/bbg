@@ -5,6 +5,7 @@ from fastapi import APIRouter
 from ..schemas import AssistantChatRequest
 from ..services.assistant_service import (
     get_assistant_diagnostics_response,
+    get_production_candidates_response,
     get_production_debug_response,
     handle_assistant_chat,
 )
@@ -25,3 +26,8 @@ def assistant_diagnostics() -> dict:
 @router.get("/production-debug")
 def assistant_production_debug(time_range: str = "today") -> dict:
     return get_production_debug_response(time_range)
+
+
+@router.get("/production-candidates")
+def assistant_production_candidates(time_range: str = "today", limit: int = 50) -> dict:
+    return get_production_candidates_response(time_range, limit)

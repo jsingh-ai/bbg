@@ -30,6 +30,7 @@ SECTION_TERMS = (
     "temperature",
     "pressure",
 )
+SYSTEM_EXEMPT_TERMS = ("alarm", "counter", "plc", "io", "i/o", "system health")
 
 
 @dataclass(frozen=True)
@@ -144,6 +145,56 @@ def _counter_stats(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "reset_count": reset_count,
         "sample_count": len(numeric_rows),
     }
+
+
+def _production_warnings(good_bags: float, bad_bags: float, total_bags: float, bad_rate_pct: float) -> list[str]:
+    warnings: list[str] = []
+    if total_bags > 0 and bad_bags > good_bags * 2:
+        warnings.append(
+            "Bad bag delta is much larger than good bag delta. Verify ASSISTANT_GOOD_BAGS_TAG_PATH and ASSISTANT_BAD_BAGS_TAG_PATH."
+        )
+    if bad_rate_pct > 50:
+        warnings.append(
+            "Bad rate is unusually high. This may indicate the configured production tags are not the desired good/bad production counters."
+        )
+    return warnings
+
+
+def _is_explicit_system_request(message: str | None = None, resolved_system: str | None = None) -> bool:
+    if resolved_system == "plc/io/system":
+        return True
+    normalized = (message or "").lower()
+    return any(term in normalized for term in SYSTEM_EXEMPT_TERMS)
+
+
+def _excluded_counts() -> dict[str, int]:
+    return {"excluded_section": 0, "excluded_tag_term": 0, "zero_range": 0}
+
+
+def _filter_process_row(
+    row: dict[str, Any],
+    *,
+    apply_process_filters: bool,
+    explicit_system_request: bool,
+    keep_tag_ids: set[int] | None = None,
+) -> str | None:
+    if not apply_process_filters or explicit_system_request:
+        return None
+    tag_id = int(row.get("tag_id") or 0)
+    if keep_tag_ids and tag_id in keep_tag_ids:
+        return None
+    settings = _settings()
+    section_key = str(row.get("section_key") or "").lower()
+    opc_path = str(row.get("opc_path") or "").lower()
+    label = str(row.get("label") or row.get("display_name") or row.get("browse_name") or "").lower()
+    blob = " ".join(part for part in (section_key, opc_path, label) if part)
+    if any(term and term in section_key for term in settings.assistant_excluded_section_key_list):
+        return "excluded_section"
+    if any(term and term in opc_path for term in settings.assistant_excluded_path_contains_list):
+        return "excluded_section"
+    if any(term and term in blob for term in settings.assistant_excluded_tag_term_list):
+        return "excluded_tag_term"
+    return None
 
 
 def get_table_count_safe(table_name: str) -> int | None:
@@ -294,6 +345,9 @@ def get_assistant_diagnostics() -> dict[str, Any]:
         "running_speed_threshold": settings.assistant_running_speed_threshold,
         "min_stop_minutes": settings.assistant_min_stop_minutes,
         "max_rows": settings.assistant_max_rows,
+        "excluded_section_keys": settings.assistant_excluded_section_key_list,
+        "excluded_path_contains": settings.assistant_excluded_path_contains_list,
+        "excluded_tag_terms": settings.assistant_excluded_tag_term_list,
     }
     try:
         database = {
@@ -497,6 +551,7 @@ def get_production_summary(time_range: TimeRange, compare_to: TimeRange | None =
     }
     result["total_bags"] = round(result["good_bags"] + result["bad_bags"], 3)
     result["bad_rate_pct"] = round((result["bad_bags"] / result["total_bags"]) * 100, 2) if result["total_bags"] > 0 else 0.0
+    result["warnings"] = _production_warnings(result["good_bags"], result["bad_bags"], result["total_bags"], result["bad_rate_pct"])
 
     if compare_to:
         baseline = get_production_summary(compare_to, None)
@@ -539,14 +594,65 @@ def get_production_debug(time_range: TimeRange) -> dict[str, Any]:
 
     good_tag, good_rows = debug_for_resolution(good_resolution, "good")
     bad_tag, bad_rows = debug_for_resolution(bad_resolution, "bad")
+    good_stats = _counter_stats(good_rows)
+    bad_stats = _counter_stats(bad_rows)
+    good_delta = float(good_stats.get("delta_sum") or 0.0)
+    bad_delta = float(bad_stats.get("delta_sum") or 0.0)
+    total_delta = good_delta + bad_delta
+    bad_rate_pct = round((bad_delta / total_delta) * 100, 2) if total_delta > 0 else 0.0
+    warnings.extend(_production_warnings(good_delta, bad_delta, total_delta, bad_rate_pct))
     return {
         "range": _range_dict(time_range),
         "good_tag": good_tag,
         "bad_tag": bad_tag,
-        "good_samples": _counter_stats(good_rows),
-        "bad_samples": _counter_stats(bad_rows),
+        "good_samples": good_stats,
+        "bad_samples": bad_stats,
         "warnings": warnings,
     }
+
+
+def get_production_candidates(time_range: TimeRange, limit: int = 50) -> dict[str, Any]:
+    candidate_terms = ("good", "bad", "bag", "bags", "reject", "rejects", "scrap", "count", "counter", "shift", "job", "total", "package")
+    rows = pool.fetch_all(
+        """
+        SELECT tag_id, opc_path, display_name, browse_name, node_id
+        FROM opc_tags
+        WHERE machine_id = %s
+          AND is_active = 1
+        ORDER BY opc_path
+        """,
+        (_machine_id(),),
+    )
+    candidates: list[dict[str, Any]] = []
+    for row in rows:
+        blob = " ".join(
+            [
+                str(row.get("opc_path") or ""),
+                str(row.get("display_name") or ""),
+                str(row.get("browse_name") or ""),
+                str(row.get("node_id") or ""),
+            ]
+        ).lower()
+        if not any(term in blob for term in candidate_terms):
+            continue
+        series = _fetch_numeric_series(int(row["tag_id"]), time_range.start, time_range.end, max_rows=_settings().assistant_max_rows)
+        stats = _counter_stats(series)
+        candidates.append(
+            {
+                "tag_id": int(row["tag_id"]),
+                "label": display_name(row),
+                "opc_path": row.get("opc_path"),
+                "section_key": parse_section_key(row.get("opc_path")),
+                "first_value": stats["first"]["value"] if stats.get("first") else None,
+                "last_value": stats["last"]["value"] if stats.get("last") else None,
+                "delta_sum": stats["delta_sum"],
+                "raw_delta": stats["raw_delta"],
+                "reset_count": stats["reset_count"],
+                "sample_count": stats["sample_count"],
+            }
+        )
+    candidates.sort(key=lambda item: (int(item["sample_count"]), abs(float(item["delta_sum"] or 0))), reverse=True)
+    return {"range": _range_dict(time_range), "candidates": candidates[: max(limit, 1)]}
 
 
 def get_stop_summary(time_range: TimeRange) -> dict[str, Any]:
@@ -656,9 +762,24 @@ def get_stop_summary(time_range: TimeRange) -> dict[str, Any]:
     }
 
 
-def get_most_changed_parameters(time_range: TimeRange, section: str | None = None, limit: int = 10) -> dict[str, Any]:
+def get_most_changed_parameters(
+    time_range: TimeRange,
+    section: str | None = None,
+    limit: int = 10,
+    *,
+    allowed_tag_ids: list[int] | None = None,
+    apply_process_filters: bool = True,
+    explicit_system_request: bool = False,
+    keep_tag_ids: list[int] | None = None,
+) -> dict[str, Any]:
     settings = _settings()
     section_sql, section_params = _section_filter_sql(section)
+    allowed_sql = ""
+    allowed_params: list[Any] = []
+    if allowed_tag_ids:
+        placeholders = ",".join(["%s"] * len(allowed_tag_ids))
+        allowed_sql = f" AND v.tag_id IN ({placeholders})"
+        allowed_params.extend(allowed_tag_ids)
     rows = pool.fetch_all(
         f"""
         SELECT
@@ -683,18 +804,18 @@ def get_most_changed_parameters(time_range: TimeRange, section: str | None = Non
           AND v.value_kind = 1
           AND v.value_num IS NOT NULL
           {section_sql}
+          {allowed_sql}
         GROUP BY v.tag_id, t.opc_path, t.display_name, t.browse_name, t.node_id, cfg.section_key
         ORDER BY sample_count DESC, t.tag_id
         LIMIT %s
         """,
-        tuple([_machine_id(), time_range.start, time_range.end, *section_params, settings.assistant_max_rows]),
+        tuple([_machine_id(), time_range.start, time_range.end, *section_params, *allowed_params, settings.assistant_max_rows]),
     )
     ranked: list[dict[str, Any]] = []
+    excluded_counts = _excluded_counts()
+    keep_tag_id_set = set(keep_tag_ids or [])
     for row in rows:
         item = row_json_safe(row)
-        text_blob = " ".join([str(row.get("opc_path") or ""), str(row.get("display_name") or ""), str(row.get("browse_name") or "")]).lower()
-        if any(keyword in text_blob for keyword in COUNTER_HINTS):
-            continue
         min_value = float(row.get("min_value") or 0)
         max_value = float(row.get("max_value") or 0)
         avg_value = float(row.get("avg_value") or 0)
@@ -709,9 +830,26 @@ def get_most_changed_parameters(time_range: TimeRange, section: str | None = Non
                 "sample_count": sample_count,
             }
         )
+        exclusion_reason = _filter_process_row(
+            item,
+            apply_process_filters=apply_process_filters,
+            explicit_system_request=explicit_system_request,
+            keep_tag_ids=keep_tag_id_set,
+        )
+        if exclusion_reason:
+            excluded_counts[exclusion_reason] += 1
+            continue
+        if float(item["range_value"]) == 0:
+            excluded_counts["zero_range"] += 1
+            continue
         ranked.append(item)
-    ranked.sort(key=lambda row: row["movement_score"], reverse=True)
-    return {"range": _range_dict(time_range), "section": section, "parameters": ranked[: max(limit, 1)]}
+    ranked.sort(key=lambda row: (row["movement_score"], row["range_value"]), reverse=True)
+    return {
+        "range": _range_dict(time_range),
+        "section": section,
+        "parameters": ranked[: max(limit, 1)],
+        "excluded_counts": excluded_counts,
+    }
 
 
 def find_last_stop(time_range: TimeRange) -> dict[str, Any] | None:
@@ -722,11 +860,29 @@ def find_last_stop(time_range: TimeRange) -> dict[str, Any] | None:
     return stops[-1] if stops else None
 
 
-def get_values_around_stop(stop_time: datetime, before_minutes: int = 10, after_minutes: int = 10, section: str | None = None, limit: int = 15) -> dict[str, Any]:
+def get_values_around_stop(
+    stop_time: datetime,
+    before_minutes: int = 10,
+    after_minutes: int = 10,
+    section: str | None = None,
+    limit: int = 15,
+    *,
+    allowed_tag_ids: list[int] | None = None,
+    apply_process_filters: bool = True,
+    explicit_system_request: bool = False,
+    keep_tag_ids: list[int] | None = None,
+    context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     settings = _settings()
     before_start = stop_time - timedelta(minutes=max(before_minutes, 1))
     after_end = stop_time + timedelta(minutes=max(after_minutes, 1))
     section_sql, section_params = _section_filter_sql(section)
+    allowed_sql = ""
+    allowed_params: list[Any] = []
+    if allowed_tag_ids:
+        placeholders = ",".join(["%s"] * len(allowed_tag_ids))
+        allowed_sql = f" AND v.tag_id IN ({placeholders})"
+        allowed_params.extend(allowed_tag_ids)
     rows = pool.fetch_all(
         f"""
         SELECT
@@ -747,10 +903,11 @@ def get_values_around_stop(stop_time: datetime, before_minutes: int = 10, after_
           AND v.value_kind = 1
           AND v.value_num IS NOT NULL
           {section_sql}
+          {allowed_sql}
         ORDER BY v.tag_id, v.created_at
         LIMIT %s
         """,
-        tuple([_machine_id(), before_start, after_end, *section_params, settings.assistant_max_rows]),
+        tuple([_machine_id(), before_start, after_end, *section_params, *allowed_params, settings.assistant_max_rows]),
     )
     if not rows:
         return {
@@ -761,11 +918,15 @@ def get_values_around_stop(stop_time: datetime, before_minutes: int = 10, after_
             "error": {"code": "no_history_rows", "message": "I found the tag, but there were no historical samples in that time range."},
             "before_stop_movement": [],
             "after_stop_effect": [],
+            "excluded_counts": _excluded_counts(),
+            "context": context or {},
         }
     grouped: dict[int, list[dict[str, Any]]] = defaultdict(list)
     for row in rows:
         grouped[int(row["tag_id"])].append(row)
     changes: list[dict[str, Any]] = []
+    excluded_counts = _excluded_counts()
+    keep_tag_id_set = set(keep_tag_ids or [])
     for tag_rows in grouped.values():
         before = [row for row in tag_rows if row.get("created_at") and row["created_at"] < stop_time]
         after = [row for row in tag_rows if row.get("created_at") and row["created_at"] >= stop_time]
@@ -780,27 +941,58 @@ def get_values_around_stop(stop_time: datetime, before_minutes: int = 10, after_
         last_before = before_values[-1]
         first_after = after_values[0]
         anchor = tag_rows[0]
-        changes.append(
-            {
-                "tag_id": int(anchor["tag_id"]),
-                "label": display_name(anchor),
-                "section_key": anchor.get("section_key") or parse_section_key(anchor.get("opc_path")),
-                "opc_path": anchor.get("opc_path"),
-                "before_avg": round(before_avg, 6),
-                "after_avg": round(after_avg, 6),
-                "delta_avg": round(after_avg - before_avg, 6),
-                "before_stop_movement": round(last_before - before_values[0], 6),
-                "after_stop_effect": round(first_after - last_before, 6),
-                "movement_score": round(abs(after_avg - before_avg) / max(abs(before_avg), 1.0), 6),
-            }
+        section_key = anchor.get("section_key") or parse_section_key(anchor.get("opc_path"))
+        item = {
+            "tag_id": int(anchor["tag_id"]),
+            "label": display_name(anchor),
+            "section_key": section_key,
+            "opc_path": anchor.get("opc_path"),
+            "before_avg": round(before_avg, 6),
+            "after_avg": round(after_avg, 6),
+            "delta_avg": round(after_avg - before_avg, 6),
+            "before_stop_movement": round(last_before - before_values[0], 6),
+            "after_stop_effect": round(first_after - last_before, 6),
+            "movement_score": round(abs(after_avg - before_avg) / max(abs(before_avg), 1.0), 6),
+            "before_movement_score": round(abs(last_before - before_values[0]) / max(abs(before_avg), 1.0), 6),
+            "after_effect_score": round(abs(first_after - last_before) / max(abs(before_avg), 1.0), 6),
+        }
+        exclusion_reason = _filter_process_row(
+            item,
+            apply_process_filters=apply_process_filters,
+            explicit_system_request=explicit_system_request,
+            keep_tag_ids=keep_tag_id_set,
         )
+        if exclusion_reason:
+            excluded_counts[exclusion_reason] += 1
+            continue
+        if item["before_stop_movement"] == 0 and item["after_stop_effect"] == 0 and item["delta_avg"] == 0:
+            excluded_counts["zero_range"] += 1
+            continue
+        changes.append(item)
+    deduped: dict[str, dict[str, Any]] = {}
+    for item in changes:
+        dedupe_key = "|".join(
+            [
+                str(item.get("section_key") or "").lower(),
+                str(item.get("label") or "").lower(),
+                str(item.get("opc_path") or "").lower(),
+            ]
+        )
+        existing = deduped.get(dedupe_key)
+        candidate_score = max(float(item.get("before_movement_score") or 0), float(item.get("after_effect_score") or 0))
+        existing_score = max(float(existing.get("before_movement_score") or 0), float(existing.get("after_effect_score") or 0)) if existing else -1
+        if existing is None or candidate_score > existing_score:
+            deduped[dedupe_key] = item
+    visible = list(deduped.values())
     return {
         "stop_time": _as_iso(stop_time),
         "section": section,
         "before_minutes": before_minutes,
         "after_minutes": after_minutes,
-        "before_stop_movement": sorted(changes, key=lambda row: abs(row["before_stop_movement"]), reverse=True)[: max(limit, 1)],
-        "after_stop_effect": sorted(changes, key=lambda row: abs(row["after_stop_effect"]), reverse=True)[: max(limit, 1)],
+        "before_stop_movement": sorted(visible, key=lambda row: (row["before_movement_score"], abs(row["before_stop_movement"])), reverse=True)[: max(limit, 1)],
+        "after_stop_effect": sorted(visible, key=lambda row: (row["after_effect_score"], abs(row["after_stop_effect"])), reverse=True)[: max(limit, 1)],
+        "excluded_counts": excluded_counts,
+        "context": context or {},
     }
 
 
