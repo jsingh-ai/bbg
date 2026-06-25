@@ -311,7 +311,7 @@ def update_tag_config(machine_id: int, tag_id: int, data: dict[str, Any]) -> dic
     return row_json_safe(row)
 
 
-def get_history(machine_id: int, section_key: str, start: datetime, end: datetime, tag_ids: list[int]) -> dict[str, Any]:
+def get_history(machine_id: int, section_key: str | None, start: datetime, end: datetime, tag_ids: list[int]) -> dict[str, Any]:
     if not tag_ids:
         return {"series": []}
     if end <= start:
@@ -320,19 +320,25 @@ def get_history(machine_id: int, section_key: str, start: datetime, end: datetim
         raise HTTPException(status_code=400, detail="Select 25 or fewer tags for one chart")
 
     placeholders = ",".join(["%s"] * len(tag_ids))
-    params: list[Any] = [machine_id, section_key, start, end, *tag_ids]
+    params: list[Any] = [machine_id]
+    section_filter = ""
+    if section_key:
+        section_filter = "AND cfg.section_key = %s"
+        params.append(section_key)
+    params.extend([start, end, *tag_ids])
     rows = pool.fetch_all(
         f"""
         SELECT
             v.created_at,
             v.tag_id,
             v.value_num,
+            cfg.section_key,
             COALESCE(NULLIF(t.display_name, ''), NULLIF(t.browse_name, ''), t.node_id) AS label
         FROM opc_tag_values v
         JOIN opc_tags t ON t.tag_id = v.tag_id
         JOIN opc_tag_display_config cfg ON cfg.tag_id = t.tag_id AND cfg.machine_id = t.machine_id
         WHERE t.machine_id = %s
-          AND cfg.section_key = %s
+          {section_filter}
           AND v.created_at >= %s
           AND v.created_at <= %s
           AND v.tag_id IN ({placeholders})
@@ -343,16 +349,23 @@ def get_history(machine_id: int, section_key: str, start: datetime, end: datetim
         tuple(params),
     )
     labels: dict[int, str] = {}
+    sections: dict[int, str] = {}
     points_by_tag: dict[int, list[list[Any]]] = defaultdict(list)
     for row in rows:
         tag_id = int(row["tag_id"])
         labels[tag_id] = str(row.get("label") or tag_id)
+        sections[tag_id] = str(row.get("section_key") or "")
         captured = row.get("created_at")
         timestamp = captured.isoformat() if hasattr(captured, "isoformat") else str(captured)
         points_by_tag[tag_id].append([timestamp, row.get("value_num")])
 
     series = [
-        {"tag_id": tag_id, "label": labels.get(tag_id, str(tag_id)), "points": points_by_tag.get(tag_id, [])}
+        {
+            "tag_id": tag_id,
+            "label": labels.get(tag_id, str(tag_id)),
+            "section_key": sections.get(tag_id, ""),
+            "points": points_by_tag.get(tag_id, []),
+        }
         for tag_id in tag_ids
     ]
     return {"series": series, "start": start.isoformat(), "end": end.isoformat()}

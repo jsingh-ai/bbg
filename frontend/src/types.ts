@@ -122,6 +122,7 @@ export interface DashboardState {
 export interface HistorySeries {
   tag_id: number;
   label: string;
+  section_key?: string;
   points: [string, number][];
 }
 
@@ -129,6 +130,13 @@ export interface HistoryResponse {
   series: HistorySeries[];
   start?: string;
   end?: string;
+}
+
+export interface SavedHistoryVariable {
+  tag_id: number;
+  label: string;
+  section_key: string;
+  current_value: string;
 }
 
 export interface RecipeLimitRow extends LiveValue {

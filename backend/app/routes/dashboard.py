@@ -50,7 +50,7 @@ def patch_tag_config(machine_id: int, tag_id: int, payload: TagConfigUpdate) -> 
 @router.get("/machines/{machine_id}/history")
 def history(
     machine_id: int,
-    section_key: str,
+    section_key: str | None = None,
     tag_ids: Annotated[list[int] | None, Query()] = None,
     start: datetime | None = None,
     end: datetime | None = None,

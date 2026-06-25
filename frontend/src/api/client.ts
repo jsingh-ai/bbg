@@ -54,9 +54,11 @@ export const api = {
     tagId: number,
     payload: { is_visible?: boolean; show_in_history_default?: boolean; sort_order?: number }
   ) => request(`/api/machines/${machineId}/tags/${tagId}/config`, { method: 'PATCH', body: JSON.stringify(payload) }),
-  getHistory: (machineId: number, sectionKey: string, start: string, end: string, tagIds: number[]) => {
+  getHistory: (machineId: number, start: string, end: string, tagIds: number[], sectionKey?: string | null) => {
     const params = new URLSearchParams();
-    params.set('section_key', sectionKey);
+    if (sectionKey) {
+      params.set('section_key', sectionKey);
+    }
     params.set('start', start);
     params.set('end', end);
     tagIds.forEach((id) => params.append('tag_ids', String(id)));

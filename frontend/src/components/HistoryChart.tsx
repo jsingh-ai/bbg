@@ -1,8 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
 import * as echarts from 'echarts';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { X } from 'lucide-react';
 import { api } from '../api/client';
-import type { LiveValue } from '../types';
+import type { LiveValue, SavedHistoryVariable } from '../types';
 
 const CHART_COLORS = ['#38bdf8', '#22c55e', '#f59e0b', '#f97316', '#ef4444', '#a78bfa', '#14b8a6', '#f43f5e'];
 
@@ -11,6 +12,9 @@ interface HistoryChartProps {
   sectionKey: string | null;
   numericValues: LiveValue[];
   refreshMs: number;
+  savedVariables: SavedHistoryVariable[];
+  onRemoveSavedVariable: (tagId: number) => void;
+  onClearSavedVariables: () => void;
 }
 
 function toLocalInputValue(date: Date) {
@@ -29,20 +33,76 @@ function defaultRange() {
   return { start: toLocalInputValue(start), end: toLocalInputValue(end) };
 }
 
-function HistoryChart({ machineId, sectionKey, numericValues, refreshMs }: HistoryChartProps) {
+function HistoryChart({
+  machineId,
+  sectionKey,
+  numericValues,
+  refreshMs,
+  savedVariables,
+  onRemoveSavedVariable,
+  onClearSavedVariables
+}: HistoryChartProps) {
   const chartRef = useRef<HTMLDivElement | null>(null);
   const chartInstance = useRef<echarts.ECharts | null>(null);
   const [range, setRange] = useState(defaultRange);
   const [selectedTagIds, setSelectedTagIds] = useState<number[]>([]);
 
+  const comparisonVariables = useMemo(
+    () =>
+      savedVariables.map((item) => ({
+        tag_id: item.tag_id,
+        label: item.label,
+        section_key: item.section_key,
+        current_value: item.current_value,
+        is_saved: true
+      })),
+    [savedVariables]
+  );
+
+  const selectorVariables = useMemo(() => {
+    const merged = [
+      ...numericValues.map((row) => ({
+        tag_id: row.tag_id,
+        label: row.label,
+        section_key: row.section_key,
+        current_value: row.current_value,
+        is_saved: false
+      })),
+      ...comparisonVariables
+    ];
+    const seen = new Set<number>();
+    return merged.filter((item) => {
+      if (seen.has(item.tag_id)) return false;
+      seen.add(item.tag_id);
+      return true;
+    });
+  }, [numericValues, comparisonVariables]);
+
+  const variableMetaByTagId = useMemo(
+    () =>
+      new Map(
+        selectorVariables.map((item) => [
+          item.tag_id,
+          {
+            label: item.label,
+            section_key: item.section_key,
+            is_saved: item.is_saved
+          }
+        ])
+      ),
+    [selectorVariables]
+  );
+
   useEffect(() => {
     const preferred = numericValues.filter((row) => Boolean(row.show_in_history_default));
     const source = preferred.length ? preferred : numericValues;
-    const defaultIds = source
+    const currentDefaults = source
       .slice(0, 8)
       .map((row) => row.tag_id);
-    setSelectedTagIds(defaultIds);
-  }, [sectionKey, numericValues]);
+    const savedIds = savedVariables.map((item) => item.tag_id);
+    const nextIds = Array.from(new Set([...currentDefaults, ...savedIds]));
+    setSelectedTagIds(nextIds);
+  }, [sectionKey, numericValues, savedVariables]);
 
   useEffect(() => {
     if (!sectionKey) return;
@@ -66,14 +126,25 @@ function HistoryChart({ machineId, sectionKey, numericValues, refreshMs }: Histo
 
   const historyQuery = useQuery({
     queryKey: ['history', machineId, sectionKey, range.start, range.end, tagIds.join(',')],
-    queryFn: () => api.getHistory(machineId, sectionKey as string, inputToQueryDateTime(range.start), inputToQueryDateTime(range.end), tagIds),
-    enabled: Boolean(sectionKey && tagIds.length),
+    queryFn: () => api.getHistory(machineId, inputToQueryDateTime(range.start), inputToQueryDateTime(range.end), tagIds),
+    enabled: Boolean(tagIds.length),
     staleTime: 10_000
   });
 
   const activeSeries = useMemo(
-    () => (historyQuery.data?.series ?? []).filter((series) => selectedTagIds.includes(series.tag_id)),
-    [historyQuery.data, selectedTagIds]
+    () =>
+      (historyQuery.data?.series ?? [])
+        .filter((series) => selectedTagIds.includes(series.tag_id))
+        .map((series) => {
+          const meta = variableMetaByTagId.get(series.tag_id);
+          const section = meta?.section_key || series.section_key || '';
+          const label = meta?.label || series.label;
+          return {
+            ...series,
+            display_name: section ? `${section} - ${label}` : label
+          };
+        }),
+    [historyQuery.data, selectedTagIds, variableMetaByTagId]
   );
 
   const hasSeriesData = useMemo(
@@ -105,8 +176,8 @@ function HistoryChart({ machineId, sectionKey, numericValues, refreshMs }: Histo
     chart.clear();
     chart.setOption({
       animation: false,
-      color: CHART_COLORS,
-      backgroundColor: 'transparent',
+        color: CHART_COLORS,
+        backgroundColor: 'transparent',
       tooltip: {
         trigger: 'axis',
         backgroundColor: 'rgba(15, 23, 42, 0.94)',
@@ -116,8 +187,8 @@ function HistoryChart({ machineId, sectionKey, numericValues, refreshMs }: Histo
       legend: {
         top: 0,
         type: 'scroll',
-        data: data.map((series) => series.label),
-        selected: Object.fromEntries(data.map((series) => [series.label, true])),
+        data: data.map((series) => series.display_name),
+        selected: Object.fromEntries(data.map((series) => [series.display_name, true])),
         textStyle: { color: '#cbd5e1' },
         inactiveColor: '#64748b',
         pageTextStyle: { color: '#cbd5e1' }
@@ -150,7 +221,7 @@ function HistoryChart({ machineId, sectionKey, numericValues, refreshMs }: Histo
         }
       ],
       series: data.map((series) => ({
-        name: series.label,
+        name: series.display_name,
         type: 'line',
         showSymbol: false,
         connectNulls: false,
@@ -219,8 +290,8 @@ function HistoryChart({ machineId, sectionKey, numericValues, refreshMs }: Histo
       <div className="history-body">
         <aside className="history-selector">
           <h3>Variables</h3>
-          {numericValues.map((row) => (
-            <label className="check-row" key={row.tag_id}>
+          {selectorVariables.map((row) => (
+            <label className="check-row history-check-row" key={row.tag_id}>
               <input
                 type="checkbox"
                 checked={selectedTagIds.includes(row.tag_id)}
@@ -230,10 +301,10 @@ function HistoryChart({ machineId, sectionKey, numericValues, refreshMs }: Histo
                   );
                 }}
               />
-              <span>{row.label}</span>
+              <span>{row.section_key ? `${row.section_key} - ${row.label}` : row.label}</span>
             </label>
           ))}
-          {!numericValues.length && <p className="empty-state small">No numeric visible variables found for this section.</p>}
+          {!selectorVariables.length && <p className="empty-state small">No numeric visible variables found for this section.</p>}
         </aside>
         <div className="chart-stage">
           {historyQuery.isError && <div className="chart-message">{(historyQuery.error as Error).message}</div>}
@@ -242,6 +313,23 @@ function HistoryChart({ machineId, sectionKey, numericValues, refreshMs }: Histo
             <div className="chart-message">No history data found for the selected variables and time range.</div>
           )}
           <div ref={chartRef} className="echart" />
+        </div>
+      </div>
+      <div className="history-chip-bar">
+        <div className="history-chip-header">
+          <h3>Saved Variables</h3>
+          <button className="secondary-button small-button" disabled={!savedVariables.length} onClick={onClearSavedVariables}>
+            Clear All
+          </button>
+        </div>
+        <div className="history-chip-list">
+          {savedVariables.map((item) => (
+            <button className="history-chip" key={item.tag_id} onClick={() => onRemoveSavedVariable(item.tag_id)}>
+              <span>{item.section_key} - {item.label}</span>
+              <X size={14} />
+            </button>
+          ))}
+          {!savedVariables.length && <div className="empty-state small">Save variables from live values to compare sections here.</div>}
         </div>
       </div>
     </section>

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo } from 'react';
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, Plus } from 'lucide-react';
 import { api } from '../api/client';
 import type { LiveValue } from '../types';
 
@@ -9,18 +9,24 @@ interface SectionPanelProps {
   sectionKey: string | null;
   refreshMs: number;
   onNumericValuesChange?: (values: LiveValue[]) => void;
+  onSaveVariable?: (value: LiveValue) => void;
+  savedVariableIds?: number[];
 }
 
 function ValueRows({
   machineId,
   values,
   visible,
-  className
+  className,
+  onSaveVariable,
+  savedVariableIds = []
 }: {
   machineId: number;
   values: LiveValue[];
   visible: boolean;
   className?: string;
+  onSaveVariable?: (value: LiveValue) => void;
+  savedVariableIds?: number[];
 }) {
   const queryClient = useQueryClient();
   const toggleMutation = useMutation({
@@ -36,26 +42,43 @@ function ValueRows({
       <table className="value-table">
         <thead>
           <tr>
+            <th className="action-col">Show</th>
+            <th className="action-col">Save</th>
             <th>Display Name</th>
             <th>Current Value</th>
-            <th className="action-col">Show</th>
           </tr>
         </thead>
         <tbody>
           {values.map((row) => (
             <tr key={row.tag_id}>
-              <td>{row.label}</td>
-              <td className="current-value">{row.current_value}</td>
               <td className="action-col">
                 <button className="icon-button" onClick={() => toggleMutation.mutate(row)} title={visible ? 'Hide variable' : 'Show variable'}>
                   {visible ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </td>
+              <td className="action-col">
+                <button
+                  className="icon-button"
+                  disabled={!row.is_numeric || savedVariableIds.includes(row.tag_id)}
+                  onClick={() => onSaveVariable?.(row)}
+                  title={
+                    !row.is_numeric
+                      ? 'Only numeric variables can be saved for history comparison'
+                      : savedVariableIds.includes(row.tag_id)
+                        ? 'Variable already saved'
+                        : 'Save variable for comparison'
+                  }
+                >
+                  <Plus size={16} />
+                </button>
+              </td>
+              <td>{row.label}</td>
+              <td className="current-value">{row.current_value}</td>
             </tr>
           ))}
           {!values.length && (
             <tr>
-              <td colSpan={3} className="muted-cell">No variables in this group.</td>
+              <td colSpan={4} className="muted-cell">No variables in this group.</td>
             </tr>
           )}
         </tbody>
@@ -64,7 +87,14 @@ function ValueRows({
   );
 }
 
-function SectionPanel({ machineId, sectionKey, refreshMs, onNumericValuesChange }: SectionPanelProps) {
+function SectionPanel({
+  machineId,
+  sectionKey,
+  refreshMs,
+  onNumericValuesChange,
+  onSaveVariable,
+  savedVariableIds = []
+}: SectionPanelProps) {
   const liveQuery = useQuery({
     queryKey: ['section-live', machineId, sectionKey],
     queryFn: () => api.getSectionLive(machineId, sectionKey as string, true),
@@ -113,13 +143,26 @@ function SectionPanel({ machineId, sectionKey, refreshMs, onNumericValuesChange 
         </div>
         <div className="section-values-column">
           <h3 className="subheading">Shown Variables</h3>
-          <ValueRows machineId={machineId} values={shown} visible className="section-values-scroll" />
+          <ValueRows
+            machineId={machineId}
+            values={shown}
+            visible
+            className="section-values-scroll"
+            onSaveVariable={onSaveVariable}
+            savedVariableIds={savedVariableIds}
+          />
         </div>
       </div>
 
       <details className="hidden-vars">
         <summary>Hidden Variables ({hidden.length})</summary>
-        <ValueRows machineId={machineId} values={hidden} visible={false} />
+        <ValueRows
+          machineId={machineId}
+          values={hidden}
+          visible={false}
+          onSaveVariable={onSaveVariable}
+          savedVariableIds={savedVariableIds}
+        />
       </details>
     </section>
   );

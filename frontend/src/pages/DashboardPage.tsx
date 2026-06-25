@@ -7,7 +7,7 @@ import HistoryChart from '../components/HistoryChart';
 import MachineMap from '../components/MachineMap';
 import RecipeSelector from '../components/RecipeSelector';
 import SectionPanel from '../components/SectionPanel';
-import type { LiveValue } from '../types';
+import type { LiveValue, SavedHistoryVariable } from '../types';
 
 interface DashboardPageProps {
   machineId: number;
@@ -18,6 +18,7 @@ function DashboardPage({ machineId, refreshSeconds }: DashboardPageProps) {
   const queryClient = useQueryClient();
   const [selectedSectionKey, setSelectedSectionKey] = useState<string | null>(null);
   const [numericValues, setNumericValues] = useState<LiveValue[]>([]);
+  const [savedVariables, setSavedVariables] = useState<SavedHistoryVariable[]>([]);
   const refreshMs = Math.max(refreshSeconds, 10) * 1000;
 
   const dashboardQuery = useQuery({
@@ -43,6 +44,7 @@ function DashboardPage({ machineId, refreshSeconds }: DashboardPageProps) {
   useEffect(() => {
     setSelectedSectionKey(null);
     setNumericValues([]);
+    setSavedVariables([]);
   }, [machineId]);
 
   const handleManualRefresh = () => {
@@ -56,6 +58,32 @@ function DashboardPage({ machineId, refreshSeconds }: DashboardPageProps) {
     window.setTimeout(() => {
       document.querySelector('.section-panel')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }, 50);
+  }, []);
+
+  const handleSaveVariable = useCallback((value: LiveValue) => {
+    if (!value.is_numeric) return;
+    setSavedVariables((prev) => {
+      if (prev.some((item) => item.tag_id === value.tag_id)) {
+        return prev;
+      }
+      return [
+        ...prev,
+        {
+          tag_id: value.tag_id,
+          label: value.label,
+          section_key: value.section_key,
+          current_value: value.current_value
+        }
+      ];
+    });
+  }, []);
+
+  const handleRemoveSavedVariable = useCallback((tagId: number) => {
+    setSavedVariables((prev) => prev.filter((item) => item.tag_id !== tagId));
+  }, []);
+
+  const handleClearSavedVariables = useCallback(() => {
+    setSavedVariables([]);
   }, []);
 
   const state = dashboardQuery.data;
@@ -103,6 +131,8 @@ function DashboardPage({ machineId, refreshSeconds }: DashboardPageProps) {
             sectionKey={selectedSectionKey}
             refreshMs={refreshMs}
             onNumericValuesChange={setNumericValues}
+            onSaveVariable={handleSaveVariable}
+            savedVariableIds={savedVariables.map((item) => item.tag_id)}
           />
           <AlertPanel machineId={machineId} alerts={alerts} onSelectSection={handleSelectSection} />
         </div>
@@ -112,6 +142,9 @@ function DashboardPage({ machineId, refreshSeconds }: DashboardPageProps) {
             sectionKey={selectedSectionKey}
             numericValues={numericValues}
             refreshMs={refreshMs}
+            savedVariables={savedVariables}
+            onRemoveSavedVariable={handleRemoveSavedVariable}
+            onClearSavedVariables={handleClearSavedVariables}
           />
         </div>
       </div>
