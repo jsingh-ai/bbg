@@ -51,16 +51,32 @@ def get_machine(machine_id: int) -> dict[str, Any]:
 def get_dashboard_summary(machine_id: int, minutes: int | None = None) -> dict[str, Any]:
     history_minutes = minutes or 60
     start = datetime.now() - timedelta(minutes=history_minutes)
+    required_paths = [SPEED_PATH]
+    for mode_paths in PRODUCTION_PATHS.values():
+        required_paths.extend(mode_paths.values())
+    required_paths = list(dict.fromkeys(required_paths))
+    path_placeholders = ",".join(["%s"] * len(required_paths))
 
     tag_rows = pool.fetch_all(
-        """
-        SELECT t.tag_id, t.opc_path, t.display_name, t.browse_name, t.node_id, l.value_kind, l.value_num, l.value_bool, l.value_text, l.error_text
+        f"""
+        SELECT
+            t.tag_id,
+            t.opc_path,
+            t.display_name,
+            t.browse_name,
+            t.node_id,
+            l.value_kind,
+            l.value_num,
+            l.value_bool,
+            l.value_text,
+            l.error_text
         FROM opc_tags t
         LEFT JOIN opc_tag_latest l ON l.tag_id = t.tag_id
         WHERE t.machine_id = %s
           AND t.is_active = 1
+          AND t.opc_path IN ({path_placeholders})
         """,
-        (machine_id,),
+        tuple([machine_id, *required_paths]),
     )
     tag_by_path = {normalize_key(str(row.get("opc_path") or "")): row for row in tag_rows}
     tag_ids = [int(row["tag_id"]) for row in tag_rows if row.get("tag_id") is not None]
@@ -208,7 +224,7 @@ def set_active_recipe(machine_id: int, recipe_id: int | None, selection_mode: st
     return get_active_recipe(machine_id)
 
 
-def get_sections(machine_id: int, include_hidden: bool = True, sync: bool = True) -> list[dict[str, Any]]:
+def get_sections(machine_id: int, include_hidden: bool = True, sync: bool = False) -> list[dict[str, Any]]:
     if sync:
         sync_machine(machine_id)
     active_recipe = get_active_recipe(machine_id)
@@ -357,7 +373,6 @@ def update_section(section_id: int, data: dict[str, Any]) -> dict[str, Any]:
 
 
 def get_section_live_values(machine_id: int, section_key: str, include_hidden: bool = True) -> dict[str, Any]:
-    sync_machine(machine_id)
     hidden_filter = "" if include_hidden else "AND cfg.is_visible = 1"
     rows = pool.fetch_all(
         f"""

@@ -27,7 +27,7 @@ def dashboard_state(machine_id: int) -> dict:
     return {
         "machine": get_machine(machine_id),
         "active_recipe": get_active_recipe(machine_id),
-        "sections": get_sections(machine_id, include_hidden=True, sync=True),
+        "sections": get_sections(machine_id, include_hidden=True, sync=False),
         "alerts": list_alerts(machine_id, active_only=True),
     }
 

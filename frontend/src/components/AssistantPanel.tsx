@@ -49,7 +49,7 @@ function AssistantPanel({ enabled }: AssistantPanelProps) {
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [showProductionCandidates, setShowProductionCandidates] = useState(false);
   const [expanded, setExpanded] = useState(false);
-  const [conversationId, setConversationId] = useState(readConversationId);
+  const [conversationId] = useState(readConversationId);
   const threadRef = useRef<HTMLDivElement | null>(null);
 
   const chatMutation = useMutation({
@@ -91,22 +91,6 @@ function AssistantPanel({ enabled }: AssistantPanelProps) {
     chatMutation.mutate(trimmed);
   };
 
-  const startNewConversation = () => {
-    const previousConversationId = conversationId;
-    void api.clearAssistantConversation(previousConversationId).catch(() => undefined);
-    const nextConversationId = createConversationId();
-    if (typeof window !== 'undefined') {
-      try {
-        window.sessionStorage.setItem(CONVERSATION_STORAGE_KEY, nextConversationId);
-      } catch {
-        // Keep the in-memory ID if browser storage is unavailable.
-      }
-    }
-    setMessages([]);
-    setMessage('');
-    setConversationId(nextConversationId);
-  };
-
   useEffect(() => {
     if (!expanded || !threadRef.current) return;
     threadRef.current.scrollTop = threadRef.current.scrollHeight;
@@ -140,15 +124,6 @@ function AssistantPanel({ enabled }: AssistantPanelProps) {
 
       {expanded && (
         <div className="panel-body assistant-panel-body">
-          <div className="assistant-operator-row">
-            <button className="primary-button assistant-new-conversation-button" onClick={startNewConversation}>
-              New Conversation
-            </button>
-            <div className="assistant-control-hint">
-              Clear Chat only clears visible messages. New Conversation resets follow-up context.
-            </div>
-          </div>
-
           <div className="assistant-toolbar">
             <button className="secondary-button small-button" onClick={() => setShowDiagnostics((prev) => !prev)}>
               <SearchCheck size={14} /> {showDiagnostics ? 'Hide Diagnostics' : 'Check Setup'}
