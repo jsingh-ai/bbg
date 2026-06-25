@@ -57,7 +57,7 @@ function ValueRows({
                 </button>
               </td>
               <td>{row.label}</td>
-              <td className="current-value">{row.current_value}</td>
+              <td className="current-value-cell"><span className="current-value-pill">{row.current_value}</span></td>
               <td className="action-col">
                 {Boolean(row.is_history_numeric ?? row.is_numeric) ? (
                   <button

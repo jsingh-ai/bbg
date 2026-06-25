@@ -138,7 +138,7 @@ function RecipePage({ machineId }: RecipePageProps) {
               return (
                 <tr key={row.tag_id}>
                   <td>{row.label}</td>
-                  <td className="current-value">{row.current_value}</td>
+                  <td className="current-value-cell"><span className="current-value-pill">{row.current_value}</span></td>
                   <td><input value={draft.min_value} onChange={(event) => updateDraft(row, { min_value: event.target.value })} /></td>
                   <td><input value={draft.max_value} onChange={(event) => updateDraft(row, { max_value: event.target.value })} /></td>
                   <td><input type="checkbox" checked={draft.is_enabled} onChange={(event) => updateDraft(row, { is_enabled: event.target.checked })} /></td>

@@ -1321,13 +1321,18 @@ p { color: var(--muted); margin-bottom: 0; }
 .section-values-scroll .value-table td:nth-child(2) {
   line-height: 1.24;
 }
-.section-values-scroll .current-value {
+.section-values-scroll .current-value-cell,
+.compare-table .current-value-cell {
+  vertical-align: middle;
+}
+.section-values-scroll .current-value-pill {
   font-size: 0.84rem;
   line-height: 1.2;
   color: var(--text-strong);
 }
-.section-values-scroll .current-value,
-.compare-table .current-value {
+.section-values-scroll .current-value-pill,
+.compare-table .current-value-pill,
+.recipe-table .current-value-pill {
   display: inline-flex;
   align-items: center;
   min-height: 30px;
@@ -1336,7 +1341,7 @@ p { color: var(--muted); margin-bottom: 0; }
   background: rgba(56, 189, 248, 0.08);
   border: 1px solid rgba(56, 189, 248, 0.12);
 }
-.current-value { font-weight: 800; color: var(--text-strong); }
+.current-value-pill { font-weight: 800; color: var(--text-strong); }
 .action-col { width: 52px; text-align: center !important; }
 .muted-cell { color: var(--muted); text-align: center !important; }
 .hidden-vars { margin: 14px 16px 0; border: 1px solid var(--line-strong); border-radius: 16px; overflow: hidden; background: var(--surface-4); }
@@ -1446,6 +1451,7 @@ p { color: var(--muted); margin-bottom: 0; }
   display: flex;
   flex: 1;
   min-height: 0;
+  height: 100%;
   overflow: hidden;
 }
 .history-selector {
@@ -1474,7 +1480,7 @@ p { color: var(--muted); margin-bottom: 0; }
 .chart-stage {
   position: relative;
   min-width: 0;
-  min-height: 0;
+  min-height: 420px;
   flex: 1;
   overflow: hidden;
   padding: 16px 18px 18px;
@@ -1483,6 +1489,7 @@ p { color: var(--muted); margin-bottom: 0; }
 .echart { width: 100%; height: 100%; min-height: 0; border-radius: 16px; }
 .history-main-echart {
   height: 100%;
+  min-height: 386px;
 }
 .chart-message { position: absolute; inset: 80px 40px auto 40px; z-index: 2; background: var(--surface-2); }
 .history-chip-bar {

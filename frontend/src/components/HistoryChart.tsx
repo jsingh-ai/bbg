@@ -374,7 +374,7 @@ export function SavedVariablesChart({
                       </td>
                       <td>{item.section_key}</td>
                       <td>{item.label}</td>
-                      <td className="current-value">{item.current_value}</td>
+                      <td className="current-value-cell"><span className="current-value-pill">{item.current_value}</span></td>
                     </tr>
                   ))}
                 </tbody>
