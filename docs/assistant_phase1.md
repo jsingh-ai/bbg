@@ -23,6 +23,7 @@ It can answer questions such as:
 - It does not acknowledge alerts.
 - It does not edit recipes, layouts, sections, or tag visibility.
 - It does not expose `OPENAI_API_KEY` to the frontend.
+- Assistant endpoints expose operational diagnostics and should be protected by the same network/auth boundary as the dashboard.
 
 ## Configuration
 
@@ -31,7 +32,12 @@ Add these values to `.env` as needed:
 ```env
 OPENAI_API_KEY=
 OPENAI_MODEL=gpt-4.1-mini
+OPENAI_TIMEOUT_SECONDS=10
+OPENAI_MAX_OUTPUT_TOKENS=350
+OPENAI_TEMPERATURE=0.1
 ASSISTANT_ENABLED=false
+ASSISTANT_LLM_SEND_RAW=false
+ASSISTANT_EXPOSE_RAW_RESPONSE=false
 ASSISTANT_DEFAULT_TIMEZONE=America/Chicago
 ASSISTANT_SPEED_TAG_PATH=Global PV/200 - format/state/machine speed
 ASSISTANT_GOOD_BAGS_TAG_PATH=Global PV/info/state/shift: good
@@ -51,12 +57,22 @@ ASSISTANT_SPEED_CONTEXT_ENABLED=true
 ASSISTANT_CONTEXT_ENABLED=true
 ASSISTANT_CONTEXT_MAX_TURNS=5
 ASSISTANT_CONTEXT_MAX_AGE_MINUTES=120
+ASSISTANT_CONTEXT_MAX_CONVERSATIONS=200
+ASSISTANT_CONTEXT_MESSAGE_MAX_CHARS=500
 ```
 
 Notes:
 
 - If `ASSISTANT_ENABLED=false` or `OPENAI_API_KEY` is blank, the assistant still works in deterministic mode.
-- OpenAI is only used to turn backend analysis into natural language.
+- OpenAI is optional and only used to turn backend analysis into natural language.
+- If `ASSISTANT_ENABLED=true`, computed assistant context may be sent to OpenAI.
+- The frontend never receives `OPENAI_API_KEY`.
+- SQL, DB credentials, environment values, and secrets are not sent to OpenAI.
+- LLM output is bounded by `OPENAI_MAX_OUTPUT_TOKENS`, and the deterministic fallback answer is used if OpenAI fails or times out.
+- If `ASSISTANT_LLM_SEND_RAW=false`, OpenAI receives a reduced payload made from the backend answer inputs, cards, tables, warnings, and compact route metadata.
+- If `ASSISTANT_LLM_SEND_RAW=true`, OpenAI receives the fuller backend-computed `raw` analysis object. Use this only if you are comfortable sending detailed OPC labels, paths, counters, and timing context to OpenAI.
+- If `ASSISTANT_EXPOSE_RAW_RESPONSE=false`, chat responses return only compact `raw.route` and `raw.llm` metadata to the frontend. Set it to `true` only when you need full raw debug output during VM troubleshooting.
+- Assistant chat requests are bounded: `message` is limited to 2000 characters and `conversation_id` is limited to 128 safe characters.
 - All calculations happen in backend code first.
 
 ## Diagnostics
@@ -84,36 +100,84 @@ The response shows:
 
 Chat responses also include `raw.route`, which shows the deterministic router decision, resolved system, section terms, time range, matched rule, and follow-up metadata under `raw.route.followup`.
 
+## Shared Intent Vocabulary
+
+The assistant uses a centralized intent vocabulary before any database analysis or optional LLM wording step.
+
+Shared term groups cover:
+
+- production: production, bags, good bags, bad bags, scrap, rejects, quality, shift production, output
+- stops: stop, stops, stopped, downtime, longest stop, machine stopped
+- change analysis: changed the most, most changed, unstable, variation, uncertainty, moving the most, bouncing
+- around-stop analysis: changed around stop, changed before stop, around the last stop, before the last stop, when speed went to 0
+- context categories: speed, state/status/mode, alarms, counters, PLC/I/O/system health
+- compare modifiers: compare, vs, versus, better than, worse than
+
+`compare` is treated as a modifier, not as production by itself.
+
+Examples:
+
+- `Compare today to yesterday` defaults to production because no other subject is present.
+- `Compare speed this week` does not route to production.
+- `Compare stops this week` does not route to production; stop comparison is not implemented yet.
+- `Compare unwinder today to yesterday` resolves the unwinder section instead of production.
+
+PLC/I/O matching is token-safe:
+
+- `io` only matches as a standalone token.
+- `i/o` only matches explicitly.
+- `production` does not accidentally trigger PLC/I/O context.
+
 The assistant service also exposes:
 
 ```powershell
 Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/assistant/version" | ConvertTo-Json -Depth 20
 ```
 
-That route returns backend JSON metadata such as `raw_route_supported`, `started_at`, `process_id`, and best-effort git commit/branch information.
+That route returns backend JSON metadata such as `raw_route_supported`, `started_at`, `process_id`, best-effort git commit/branch information, and `conversation_memory` stats. The memory stats do not expose stored messages.
 
 ## Follow-Up Context
 
 The assistant now supports lightweight follow-up context using in-memory state only.
 
 - It stores only the last 5 route summaries per `conversation_id`.
-- It stores route-level context only: message, intent, time range, compare flag, resolved system, section terms, subject, stop time, and a timestamp.
-- It does not store full chat history.
+- It stores truncated user messages plus route-level context: intent, time range, compare flag, resolved system, section terms, subject, stop time, and a timestamp.
+- User messages are capped by `ASSISTANT_CONTEXT_MESSAGE_MAX_CHARS`.
+- The process keeps at most `ASSISTANT_CONTEXT_MAX_CONVERSATIONS` active conversations and evicts the least recently used conversation when the limit is exceeded.
+- It does not store full assistant responses.
 - It does not store DB rows.
 - It does not store OpenAI prompts or responses.
 - It does not survive backend restart.
 - It does not write to MySQL.
+- If multiple uvicorn workers are used, follow-up context may not be consistent across workers.
+- For reliable Phase 1 follow-ups, run one backend process.
 
 Frontend behavior:
 
 - `AssistantPanel` sends a stable `conversation_id` for the current browser chat session.
-- `New Conversation` clears the local chat view, rotates the browser-side `conversation_id`, and can clear the matching in-memory backend conversation state.
+- The browser stores only the `conversation_id` in `sessionStorage` under `bbg_assistant_conversation_id`.
+- Refreshing the page keeps follow-up continuity within the same browser session.
+- Chat messages are not stored in `sessionStorage`.
+- `Clear Chat` only clears visible messages and the input box.
+- `New Conversation` clears the local chat view, asks the backend to clear the old in-memory conversation when the clear endpoint is available, rotates the browser-side `conversation_id`, and updates `sessionStorage`.
+- Use `New Conversation` when you want to reset follow-up context.
 
 Debug behavior:
 
 - `raw.route.followup.used_context` tells you whether a follow-up inherited context.
 - `raw.route.followup.reason` explains why context was or was not applied.
-- `raw.route.followup.previous_*` and `inherited_*` fields show what was reused.
+- `raw.route.followup.original_intent` and `original_time_range` show the first route decision before memory was applied.
+- `raw.route.followup.resolved_intent` and `resolved_time_range` show the final route decision used for analysis.
+- `raw.route.followup.previous_*`, `inherited_*`, `changed_intent`, and `changed_time_range` fields show what was reused and what changed.
+
+Follow-up inheritance is intentionally narrow:
+
+- previous production plus a time-only follow-up inherits production for the new time range
+- previous stops plus a bags/production follow-up switches to production and inherits the previous time range
+- previous production plus a stops follow-up switches to stops and inherits the previous time range
+- previous around-stop/process analysis plus a section follow-up keeps the process intent and adds the new section
+- previous section plus a time-only follow-up keeps the section and uses the new time range
+- unrelated messages such as `compare speed` after a production answer do not inherit production context
 
 ### Missing Tag Warnings
 
@@ -200,6 +264,37 @@ Repeated names are disambiguated with contextual labels derived from OPC path se
 - `nozzle - 3 / flow rate`
 - `nozzle - a-side / current speed`
 - `web tension / currentPressure`
+
+Around-stop defaults are intentionally strict. For `What changed around the last stop?`, ranked before/after process tables exclude:
+
+- machine speed, which is treated as the stop marker
+- dependent speed/performance rows such as `current speed` and `cycle performance`
+- state/status/mode rows
+- counters and production counts
+- alarms and max-severity rows
+- PLC/I/O/system-health rows
+- zero-range and zero-score rows
+
+Those categories are kept in context buckets when useful:
+
+- `raw.context.machine_speed`
+- `raw.context.dependent_speed_changes`
+- `raw.context.state_changes`
+- `raw.context.alarm_changes`
+- `raw.context.counter_changes`
+- `raw.context.plc_changes`
+
+Explicit category questions are independent:
+
+- speed questions show machine/dependent-speed context clearly, but speed is still not described as a process cause
+- state/status questions can allow state rows without also allowing speed, alarms, counters, or PLC/I/O rows
+- alarm questions can show alarm context without enabling counters, speed, state, or PLC/I/O
+- counter questions can show counter context without enabling speed, state, alarms, or PLC/I/O
+- PLC/I/O questions can show PLC/I/O context without enabling unrelated categories
+
+Visible rows and context rows are deduped by lowercase `opc_path` first. If `opc_path` is missing, the fallback key is lowercase `section_key|label`. When duplicates are found, the assistant keeps the row with the strongest range/score, then sample count.
+
+Query limiting is reported in `raw.limits` and in a `Query Limits` table when applicable. Most-changed analysis uses SQL aggregation per tag and applies the safety cap after SQL ranking by movement/range. Around-stop analysis first selects candidate tag IDs, then fetches rows for those candidate tags around the stop. If `raw.limits.truncated=true`, the answer should be treated as capped rather than complete.
 
 ## Production Calculation
 

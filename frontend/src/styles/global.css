@@ -646,6 +646,12 @@ p { color: var(--muted); margin-bottom: 0; }
   flex-wrap: wrap;
   margin-bottom: 14px;
 }
+.assistant-control-hint {
+  margin: -4px 0 14px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  text-align: right;
+}
 .assistant-diagnostics {
   border: 1px solid var(--line);
   border-radius: 18px;

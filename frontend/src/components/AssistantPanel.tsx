@@ -24,15 +24,32 @@ const STARTER_PROMPTS = [
   'What happened in the unwinder today?'
 ];
 
+const CONVERSATION_STORAGE_KEY = 'bbg_assistant_conversation_id';
+
+function createConversationId() {
+  return globalThis.crypto?.randomUUID?.() ?? `assistant-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function readConversationId() {
+  if (typeof window === 'undefined') return createConversationId();
+  const generated = createConversationId();
+  try {
+    const existing = window.sessionStorage.getItem(CONVERSATION_STORAGE_KEY);
+    if (existing) return existing;
+    window.sessionStorage.setItem(CONVERSATION_STORAGE_KEY, generated);
+  } catch {
+    return generated;
+  }
+  return generated;
+}
+
 function AssistantPanel({ enabled }: AssistantPanelProps) {
   const [message, setMessage] = useState('');
   const [messages, setMessages] = useState<ChatEntry[]>([]);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [showProductionCandidates, setShowProductionCandidates] = useState(false);
   const [expanded, setExpanded] = useState(false);
-  const [conversationId, setConversationId] = useState(() =>
-    globalThis.crypto?.randomUUID?.() ?? `assistant-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
-  );
+  const [conversationId, setConversationId] = useState(readConversationId);
   const threadRef = useRef<HTMLDivElement | null>(null);
 
   const chatMutation = useMutation({
@@ -54,6 +71,13 @@ function AssistantPanel({ enabled }: AssistantPanelProps) {
     staleTime: 60_000
   });
 
+  const versionQuery = useQuery({
+    queryKey: ['assistant-version'],
+    queryFn: api.getAssistantVersion,
+    enabled: expanded && showDiagnostics,
+    staleTime: 60_000
+  });
+
   const productionCandidatesQuery = useQuery({
     queryKey: ['assistant-production-candidates'],
     queryFn: () => api.getAssistantProductionCandidates('today', 12),
@@ -70,9 +94,17 @@ function AssistantPanel({ enabled }: AssistantPanelProps) {
   const startNewConversation = () => {
     const previousConversationId = conversationId;
     void api.clearAssistantConversation(previousConversationId).catch(() => undefined);
+    const nextConversationId = createConversationId();
+    if (typeof window !== 'undefined') {
+      try {
+        window.sessionStorage.setItem(CONVERSATION_STORAGE_KEY, nextConversationId);
+      } catch {
+        // Keep the in-memory ID if browser storage is unavailable.
+      }
+    }
     setMessages([]);
     setMessage('');
-    setConversationId(globalThis.crypto?.randomUUID?.() ?? `assistant-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`);
+    setConversationId(nextConversationId);
   };
 
   useEffect(() => {
@@ -118,6 +150,9 @@ function AssistantPanel({ enabled }: AssistantPanelProps) {
               New Conversation
             </button>
           </div>
+          <div className="assistant-control-hint">
+            Clear Chat only clears visible messages. New Conversation resets follow-up context.
+          </div>
 
           {showDiagnostics && (
             <div className="assistant-diagnostics">
@@ -149,6 +184,20 @@ function AssistantPanel({ enabled }: AssistantPanelProps) {
                     <div className="assistant-metric-card">
                       <span>Latest History</span>
                       <strong>{diagnosticsQuery.data.database.latest_history_timestamp ?? '--'}</strong>
+                    </div>
+                    <div className="assistant-metric-card">
+                      <span>Backend Version</span>
+                      <strong>{versionQuery.data?.git_commit?.slice(0, 8) ?? diagnosticsQuery.data.version?.git_commit?.slice(0, 8) ?? '--'}</strong>
+                    </div>
+                    <div className="assistant-metric-card">
+                      <span>Memory</span>
+                      <strong>
+                        {versionQuery.data?.conversation_memory
+                          ? `${versionQuery.data.conversation_memory.conversation_count}/${versionQuery.data.conversation_memory.max_conversations}`
+                          : diagnosticsQuery.data.version?.conversation_memory
+                            ? `${diagnosticsQuery.data.version.conversation_memory.conversation_count}/${diagnosticsQuery.data.version.conversation_memory.max_conversations}`
+                            : '--'}
+                      </strong>
                     </div>
                   </div>
 
@@ -265,6 +314,11 @@ function AssistantPanel({ enabled }: AssistantPanelProps) {
                           Follow-up context: {entry.response.raw.route.followup.used_context ? 'used' : 'not used'}
                         </div>
                       )}
+                      {entry.response.raw.llm && (
+                        <div className="assistant-followup-debug">
+                          LLM: {entry.response.raw.llm.used ? 'used' : 'fallback'}
+                        </div>
+                      )}
                       {!!entry.response.cards.length && (
                         <div className="assistant-card-grid">
                           {entry.response.cards.map((card) => (
@@ -345,7 +399,7 @@ function AssistantPanel({ enabled }: AssistantPanelProps) {
                 }}
                 disabled={!messages.length && !message.trim()}
               >
-                Clear
+                Clear Chat
               </button>
               <button className="primary-button" onClick={() => submitMessage(message)} disabled={chatMutation.isPending || !message.trim()}>
                 <Send size={16} /> Send

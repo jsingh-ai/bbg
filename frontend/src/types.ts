@@ -178,32 +178,51 @@ export interface AssistantChatRequest {
   conversation_id?: string;
 }
 
-export interface AssistantFollowupDebug {
+export interface AssistantFollowupMetadata {
   used_context: boolean;
   reason: string;
   conversation_id?: string | null;
   history_turns_available: number;
   previous_intent?: string | null;
   previous_time_range?: string | null;
+  original_intent?: string | null;
+  original_time_range?: string | null;
+  resolved_intent?: string | null;
+  resolved_time_range?: string | null;
   inherited_intent?: string | null;
   inherited_time_range?: string | null;
+  changed_intent?: boolean;
+  changed_time_range?: boolean;
   inherited_resolved_system?: string | null;
   inherited_section_terms: string[];
 }
 
-export interface AssistantRouteDebug {
+export interface AssistantLLMMeta {
+  used: boolean;
+  error?: 'fallback_used' | string;
+}
+
+export interface AssistantRoute {
   intent?: string;
   time_range?: string;
   compare_to?: string | null;
+  matched_rule?: string;
   resolved_system?: string | null;
   section_terms?: string[];
   matched_alias?: string | null;
-  followup?: AssistantFollowupDebug;
+  query_terms?: string[];
+  explicit_speed_context?: boolean;
+  explicit_state_context?: boolean;
+  explicit_alarm_context?: boolean;
+  explicit_counter_context?: boolean;
+  explicit_plc_context?: boolean;
+  followup?: AssistantFollowupMetadata;
   [key: string]: unknown;
 }
 
 export interface AssistantRawResponse {
-  route?: AssistantRouteDebug;
+  route?: AssistantRoute;
+  llm?: AssistantLLMMeta;
   [key: string]: unknown;
 }
 
@@ -248,6 +267,8 @@ export interface AssistantDiagnosticsResponse {
     bad_bags_tag_path: string;
     total_bags_tag_path?: string;
     production_mode?: string;
+    llm_send_raw?: boolean;
+    expose_raw_response?: boolean;
     running_speed_threshold: number;
     min_stop_minutes: number;
     max_rows: number;
@@ -258,6 +279,11 @@ export interface AssistantDiagnosticsResponse {
     state_context_enabled?: boolean;
     dependent_speed_terms?: string[];
     speed_context_enabled?: boolean;
+    assistant_context_enabled?: boolean;
+    assistant_context_max_turns?: number;
+    assistant_context_max_age_minutes?: number;
+    assistant_context_max_conversations?: number;
+    assistant_context_message_max_chars?: number;
   };
   database: {
     connected: boolean;
@@ -283,6 +309,15 @@ export interface AssistantVersionResponse {
   process_id: number;
   git_commit?: string | null;
   git_branch?: string | null;
+  conversation_memory?: {
+    enabled: boolean;
+    conversation_count: number;
+    max_conversations: number;
+    max_turns: number;
+    max_age_minutes: number;
+    message_max_chars?: number;
+    process_local: boolean;
+  };
 }
 
 export interface AssistantProductionSampleStats {

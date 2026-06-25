@@ -5,6 +5,7 @@ import type {
   AssistantDiagnosticsResponse,
   AssistantProductionCandidatesResponse,
   AssistantProductionDebugResponse,
+  AssistantVersionResponse,
   ActiveRecipe,
   AlertEvent,
   AppConfig,
@@ -106,6 +107,7 @@ export const api = {
       body: JSON.stringify({ conversation_id: conversationId })
     }),
   getAssistantDiagnostics: () => request<AssistantDiagnosticsResponse>('/api/assistant/diagnostics'),
+  getAssistantVersion: () => request<AssistantVersionResponse>('/api/assistant/version'),
   getAssistantProductionDebug: (timeRange = 'today') =>
     request<AssistantProductionDebugResponse>(`/api/assistant/production-debug?time_range=${encodeURIComponent(timeRange)}`),
   getAssistantProductionCandidates: (timeRange = 'today', limit = 25) =>

@@ -1,18 +1,25 @@
 from __future__ import annotations
 
 import unittest
+from types import SimpleNamespace
 
+from app.services import process_analysis
 from app.services.assistant_router import route_assistant_message
-from app.services.assistant_service import _comparison_range_for_route, _deterministic_answer, _top_labels
+from app.services.assistant_service import _build_openai_messages, _comparison_range_for_route, _deterministic_answer, _top_labels
+from app.services.assistant_intents import has_explicit_plc_context
 from app.services.process_analysis import (
+    _filter_process_row,
     _is_dependent_speed_context_row,
+    _is_dependent_speed_row,
     _is_explicit_alarm_context_request,
     _is_explicit_counter_context_request,
     _is_explicit_plc_context_request,
     _is_explicit_speed_context_request,
     _is_explicit_state_context_request,
+    _is_machine_speed_context_row,
     _is_state_context_row,
     _production_warnings,
+    _rank_visible_around_stop_rows,
     dedupe_rows,
     make_contextual_label,
     should_exclude_section,
@@ -20,16 +27,61 @@ from app.services.process_analysis import (
 
 
 class AssistantRouterTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.original_process_settings = process_analysis._settings
+        process_analysis._settings = lambda: SimpleNamespace(
+            assistant_state_context_enabled=True,
+            assistant_speed_context_enabled=True,
+            assistant_dependent_speed_term_list=["current speed", "cycle performance"],
+            assistant_excluded_state_term_list=["state", "status", "mode"],
+            assistant_excluded_section_key_list=["i", "alarm system"],
+            assistant_excluded_path_contains_list=["/i/o/", "alarm system"],
+            assistant_excluded_tag_term_list=[
+                "counter",
+                "count",
+                "number of",
+                "good",
+                "bad",
+                "total",
+                "shift",
+                "job",
+                "active alarms",
+                "max severity",
+                "storagewear",
+            ],
+        )
+
+    def tearDown(self) -> None:
+        process_analysis._settings = self.original_process_settings
+
     def test_production_today(self) -> None:
         route = route_assistant_message("How was production today?")
         self.assertEqual(route["intent"], "production_summary")
         self.assertEqual(route["time_range"], "today")
+        self.assertFalse(route["explicit_plc_context"])
 
     def test_compare_today_to_yesterday(self) -> None:
         route = route_assistant_message("Compare today to yesterday")
         self.assertEqual(route["intent"], "production_summary")
         self.assertEqual(route["time_range"], "today")
         self.assertEqual(route["compare_to"], "yesterday")
+
+    def test_compare_speed_does_not_route_to_production(self) -> None:
+        route = route_assistant_message("Compare speed this week")
+        self.assertNotEqual(route["intent"], "production_summary")
+        self.assertEqual(route["time_range"], "last_week")
+
+    def test_compare_stops_does_not_route_to_production(self) -> None:
+        route = route_assistant_message("Compare stops this week")
+        self.assertNotEqual(route["intent"], "production_summary")
+        self.assertEqual(route["matched_rule"], "compare_stops_not_implemented")
+
+    def test_compare_unwinder_does_not_route_to_production(self) -> None:
+        route = route_assistant_message("Compare unwinder today to yesterday")
+        self.assertEqual(route["intent"], "section_summary")
+        self.assertEqual(route["time_range"], "today")
+        self.assertEqual(route["compare_to"], "yesterday")
+        self.assertEqual(route["resolved_system"], "unwinder")
 
     def test_plain_production_today_has_no_compare(self) -> None:
         route = route_assistant_message("How was production today?")
@@ -50,6 +102,47 @@ class AssistantRouterTests(unittest.TestCase):
             },
         )
         self.assertNotIn("yesterday", text.lower())
+
+    def test_openai_prompt_builder_limits_model_to_supplied_json(self) -> None:
+        messages = _build_openai_messages("What changed?", "most_changed_parameters", {"parameters": []})
+        system_prompt = messages[0]["content"].lower()
+        self.assertIn("only use supplied json", system_prompt)
+        self.assertIn("do not claim causation", system_prompt)
+
+    def test_openai_prompt_sanitized_payload_omits_paths_by_default(self) -> None:
+        messages = _build_openai_messages(
+            "What happened in the unwinder?",
+            "section_summary",
+            {
+                "error": {
+                    "code": "missing_tag",
+                    "message": "missing",
+                    "configured_path": "Global PV/secret/path",
+                },
+                "route": {"intent": "section_summary", "time_range": "today"},
+            },
+            cards=[],
+            tables=[
+                {
+                    "title": "Matching Tags",
+                    "columns": ["Label", "OPC Path"],
+                    "rows": [["current diameter", "Global PV/020 - unwinder/state/current diameter"]],
+                }
+            ],
+        )
+        user_prompt = messages[1]["content"]
+        self.assertIn("current diameter", user_prompt)
+        self.assertNotIn("Global PV/secret/path", user_prompt)
+        self.assertNotIn("Global PV/020 - unwinder/state/current diameter", user_prompt)
+
+    def test_openai_prompt_can_send_raw_when_explicitly_enabled(self) -> None:
+        messages = _build_openai_messages(
+            "What happened in the unwinder?",
+            "section_summary",
+            {"matching_tags": [{"opc_path": "Global PV/020 - unwinder/state/current diameter"}]},
+            send_raw=True,
+        )
+        self.assertIn("Global PV/020 - unwinder/state/current diameter", messages[1]["content"])
 
     def test_stop_summary(self) -> None:
         route = route_assistant_message("How many stops in the last 24 hours?")
@@ -139,6 +232,18 @@ class AssistantRouterTests(unittest.TestCase):
             )
         )
 
+    def test_default_filter_excludes_machine_speed(self) -> None:
+        self.assertTrue(_is_machine_speed_context_row({"tag_id": 221}, 221))
+
+    def test_default_filter_detects_dependent_speed_even_when_explicit_speed(self) -> None:
+        row = {
+            "display_name": "current speed",
+            "opc_path": "Global PV/265 - hotmelt - bottom forming/state/nozzle - a-side/current speed",
+            "label": "nozzle - a-side / current speed",
+        }
+        self.assertTrue(_is_dependent_speed_row(row))
+        self.assertFalse(_is_dependent_speed_context_row(row, explicit_speed_context=True))
+
     def test_explicit_speed_question_bypasses_dependent_speed_context(self) -> None:
         route = route_assistant_message("Show me speed changes around the last stop")
         self.assertTrue(route["explicit_speed_context"])
@@ -155,8 +260,44 @@ class AssistantRouterTests(unittest.TestCase):
     def test_plc_context_request(self) -> None:
         self.assertTrue(_is_explicit_plc_context_request("Show PLC controller health"))
 
+    def test_io_context_requires_standalone_token(self) -> None:
+        self.assertTrue(has_explicit_plc_context("show io status"))
+        self.assertTrue(has_explicit_plc_context("show i/o status"))
+        self.assertFalse(has_explicit_plc_context("production"))
+        self.assertFalse(route_assistant_message("production")["explicit_plc_context"])
+
     def test_counter_context_request(self) -> None:
         self.assertTrue(_is_explicit_counter_context_request("Show package counter values"))
+
+    def test_default_filter_excludes_alarm_rows(self) -> None:
+        reason = _filter_process_row(
+            {"tag_id": 1, "section_key": "alarm system", "opc_path": "Global PV/alarm system/active alarms", "label": "active alarms"},
+            apply_process_filters=True,
+            explicit_alarm_context=False,
+            explicit_counter_context=False,
+            explicit_plc_context=False,
+        )
+        self.assertIsNotNone(reason)
+
+    def test_default_filter_excludes_counter_rows(self) -> None:
+        reason = _filter_process_row(
+            {"tag_id": 1, "section_key": "format", "opc_path": "Global PV/info/state/package counter", "label": "package counter"},
+            apply_process_filters=True,
+            explicit_alarm_context=False,
+            explicit_counter_context=False,
+            explicit_plc_context=False,
+        )
+        self.assertEqual(reason, "excluded_tag_term")
+
+    def test_default_filter_excludes_plc_rows(self) -> None:
+        reason = _filter_process_row(
+            {"tag_id": 1, "section_key": "i", "opc_path": "Global PV/i/o/plc temperature", "label": "plc temperature"},
+            apply_process_filters=True,
+            explicit_alarm_context=False,
+            explicit_counter_context=False,
+            explicit_plc_context=False,
+        )
+        self.assertIsNotNone(reason)
 
     def test_exclude_exact_i_section(self) -> None:
         self.assertTrue(should_exclude_section("i", ["i"]))
@@ -199,6 +340,35 @@ class AssistantRouterTests(unittest.TestCase):
                 "current diameter in 300 - unwinder - bottom layer",
             ],
         )
+
+    def test_zero_score_rows_removed_from_default_around_stop_visible_rows(self) -> None:
+        before, after = _rank_visible_around_stop_rows(
+            [
+                {
+                    "opc_path": "Global PV/020 - unwinder/state/current diameter",
+                    "label": "current diameter",
+                    "section_key": "020 - unwinder",
+                    "before_movement_score": 0,
+                    "after_effect_score": 0,
+                    "movement_score": 0,
+                    "before_stop_movement": 0,
+                    "after_stop_effect": 0,
+                },
+                {
+                    "opc_path": "Global PV/020 - unwinder/state/web tension/currentPressure",
+                    "label": "web tension / currentPressure",
+                    "section_key": "020 - unwinder",
+                    "before_movement_score": 2,
+                    "after_effect_score": 0,
+                    "movement_score": 1,
+                    "before_stop_movement": 4,
+                    "after_stop_effect": 0,
+                },
+            ],
+            10,
+        )
+        self.assertEqual(len(before), 1)
+        self.assertEqual(len(after), 0)
 
     def test_production_warning_helper(self) -> None:
         warnings = _production_warnings(7, 654, 661, round((654 / 661) * 100, 2))

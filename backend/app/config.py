@@ -33,7 +33,12 @@ class Settings(BaseSettings):
     default_history_minutes: int = 60
     openai_api_key: str = ""
     openai_model: str = "gpt-4.1-mini"
+    openai_timeout_seconds: float = 10
+    openai_max_output_tokens: int = 350
+    openai_temperature: float = 0.1
     assistant_enabled: bool = False
+    assistant_llm_send_raw: bool = False
+    assistant_expose_raw_response: bool = False
     assistant_max_rows: int = 5000
     assistant_default_timezone: str = "America/Chicago"
     assistant_speed_tag_path: str = "Global PV/200 - format/state/machine speed"
@@ -53,6 +58,8 @@ class Settings(BaseSettings):
     assistant_context_enabled: bool = True
     assistant_context_max_turns: int = 5
     assistant_context_max_age_minutes: int = 120
+    assistant_context_max_conversations: int = 200
+    assistant_context_message_max_chars: int = 500
 
     cors_origins: str = Field(default="http://localhost:5173,http://127.0.0.1:5173")
 

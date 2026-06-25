@@ -65,10 +65,10 @@ class HistoryRequest(BaseModel):
 
 
 class AssistantChatRequest(BaseModel):
-    message: str
-    time_range: str | None = None
-    conversation_id: str | None = None
+    message: str = Field(min_length=1, max_length=2000)
+    time_range: str | None = Field(default=None, max_length=32)
+    conversation_id: str | None = Field(default=None, min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_.:-]+$")
 
 
 class AssistantConversationClearRequest(BaseModel):
-    conversation_id: str
+    conversation_id: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_.:-]+$")

@@ -9,6 +9,13 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from ..config import get_settings
 from ..db import pool
+from .assistant_intents import (
+    has_explicit_alarm_context,
+    has_explicit_counter_context,
+    has_explicit_plc_context,
+    has_explicit_speed_context,
+    has_explicit_state_context,
+)
 from .section_parser import display_name, normalize_key, parse_section_key
 from .value_format import formatted_value, row_json_safe, rows_json_safe
 
@@ -161,54 +168,23 @@ def _production_warnings(good_bags: float, bad_bags: float, total_bags: float, b
 
 
 def _is_explicit_speed_context_request(message: str | None = None) -> bool:
-    normalized = normalize_key(message or "")
-    return any(
-        term in normalized
-        for term in (
-            "speed",
-            "speeds",
-            "currentspeed",
-            "machinespeed",
-            "performance",
-            "cycleperformance",
-            "drivespeed",
-            "motion",
-            "velocity",
-        )
-    )
+    return has_explicit_speed_context(message)
 
 
 def _is_explicit_state_context_request(message: str | None = None) -> bool:
-    normalized = normalize_key(message or "")
-    return any(
-        term in normalized
-        for term in (
-            "state",
-            "status",
-            "mode",
-            "condition",
-            "runningcondition",
-        )
-    )
+    return has_explicit_state_context(message)
 
 
 def _is_explicit_alarm_context_request(message: str | None = None, resolved_system: str | None = None) -> bool:
-    if resolved_system == "alarm/system":
-        return True
-    normalized = normalize_key(message or "")
-    return any(term in normalized for term in ("alarm", "alarms", "fault", "faults", "warning", "warnings", "maxseverity"))
+    return has_explicit_alarm_context(message, resolved_system)
 
 
 def _is_explicit_counter_context_request(message: str | None = None) -> bool:
-    normalized = normalize_key(message or "")
-    return any(term in normalized for term in ("counter", "counters", "count", "counts", "numberof", "packagecounter"))
+    return has_explicit_counter_context(message)
 
 
 def _is_explicit_plc_context_request(message: str | None = None, resolved_system: str | None = None) -> bool:
-    if resolved_system == "plc/io/system":
-        return True
-    normalized = normalize_key(message or "")
-    return any(term in normalized for term in ("plc", "io", "i/o", "systemhealth", "controller"))
+    return has_explicit_plc_context(message, resolved_system)
 
 
 def _excluded_counts() -> dict[str, int]:
@@ -219,6 +195,9 @@ def _excluded_counts() -> dict[str, int]:
         "machine_speed_context": 0,
         "state_context": 0,
         "dependent_speed_context": 0,
+        "alarm_context": 0,
+        "counter_context": 0,
+        "plc_context": 0,
     }
 
 
@@ -228,6 +207,78 @@ def _is_alarm_term(term: str) -> bool:
 
 def _is_counter_term(term: str) -> bool:
     return any(token in term for token in ("counter", "count", "number of", "good", "bad", "total", "shift", "job", "package"))
+
+
+def _row_blob(item: dict[str, Any]) -> str:
+    return " ".join(
+        str(item.get(key) or "").lower()
+        for key in ("section_key", "opc_path", "label", "display_name", "browse_name", "node_id")
+    )
+
+
+def _context_score(row: dict[str, Any]) -> tuple[float, float, float]:
+    range_value = abs(float(row.get("range") or row.get("range_value") or 0))
+    score_value = max(
+        abs(float(row.get("before_movement_score") or 0)),
+        abs(float(row.get("after_effect_score") or 0)),
+        abs(float(row.get("movement_score") or 0)),
+        abs(float(row.get("before_stop_movement") or 0)),
+        abs(float(row.get("after_stop_effect") or 0)),
+        abs(float(row.get("delta_avg") or 0)),
+    )
+    return (range_value, score_value, float(row.get("sample_count") or 0))
+
+
+def _around_context_row(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "tag_id": item.get("tag_id"),
+        "label": item.get("label"),
+        "display_name": item.get("display_name"),
+        "section_key": item.get("section_key"),
+        "opc_path": item.get("opc_path"),
+        "before_avg": item.get("before_avg"),
+        "after_avg": item.get("after_avg"),
+        "delta_avg": item.get("delta_avg"),
+        "before_stop_movement": item.get("before_stop_movement"),
+        "after_stop_effect": item.get("after_stop_effect"),
+        "before_movement_score": item.get("before_movement_score"),
+        "after_effect_score": item.get("after_effect_score"),
+        "movement_score": item.get("movement_score"),
+    }
+
+
+def _most_changed_context_row(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "tag_id": item.get("tag_id"),
+        "label": item.get("label"),
+        "display_name": item.get("display_name"),
+        "section_key": item.get("section_key"),
+        "opc_path": item.get("opc_path"),
+        "min": item.get("min_value"),
+        "max": item.get("max_value"),
+        "avg": item.get("avg_value"),
+        "range": item.get("range_value"),
+        "sample_count": item.get("sample_count"),
+    }
+
+
+def _context_bucket_for_filtered_row(
+    item: dict[str, Any],
+    *,
+    explicit_alarm_context: bool,
+    explicit_counter_context: bool,
+    explicit_plc_context: bool,
+) -> str | None:
+    blob = _row_blob(item)
+    if not explicit_plc_context and ("/i/o/" in blob or "plc" in blob or "system health" in blob):
+        return "plc_changes"
+    if not explicit_alarm_context and any(token in blob for token in ("alarm", "active alarms", "max severity", "fault", "warning")):
+        return "alarm_changes"
+    if not explicit_counter_context and any(
+        token in blob for token in ("counter", "count", "number of", "good", "bad", "total", "shift", "job", "package")
+    ):
+        return "counter_changes"
+    return None
 
 
 def should_exclude_section(section_key: str, terms: list[str]) -> bool:
@@ -316,8 +367,14 @@ def _is_state_context_row(item: dict[str, Any], *, explicit_state_context: bool 
 
 
 def _is_dependent_speed_context_row(item: dict[str, Any], *, explicit_speed_context: bool = False) -> bool:
+    if explicit_speed_context:
+        return False
+    return _is_dependent_speed_row(item)
+
+
+def _is_dependent_speed_row(item: dict[str, Any]) -> bool:
     settings = _settings()
-    if not settings.assistant_speed_context_enabled or explicit_speed_context:
+    if not settings.assistant_speed_context_enabled:
         return False
     blob = " ".join(
         [
@@ -327,6 +384,24 @@ def _is_dependent_speed_context_row(item: dict[str, Any], *, explicit_speed_cont
         ]
     ).lower()
     return any(term in blob for term in settings.assistant_dependent_speed_term_list)
+
+
+def _is_machine_speed_context_row(item: dict[str, Any], speed_tag_id: int | None) -> bool:
+    return bool(speed_tag_id and int(item.get("tag_id") or 0) == speed_tag_id)
+
+
+def _rank_visible_around_stop_rows(changes: list[dict[str, Any]], limit: int) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    visible = dedupe_rows(
+        changes,
+        lambda row: max(float(row.get("before_movement_score") or 0), float(row.get("after_effect_score") or 0), float(row.get("movement_score") or 0)),
+    )
+    visible = [item for item in visible if float(item.get("before_movement_score") or 0) > 0 or float(item.get("after_effect_score") or 0) > 0]
+    before_rows = [item for item in visible if float(item.get("before_movement_score") or 0) > 0]
+    after_rows = [item for item in visible if float(item.get("after_effect_score") or 0) > 0]
+    return (
+        sorted(before_rows, key=lambda row: (row["before_movement_score"], abs(row["before_stop_movement"])), reverse=True)[: max(limit, 1)],
+        sorted(after_rows, key=lambda row: (row["after_effect_score"], abs(row["after_stop_effect"])), reverse=True)[: max(limit, 1)],
+    )
 
 
 def _filter_process_row(
@@ -349,6 +424,8 @@ def _filter_process_row(
     label = str(row.get("label") or row.get("display_name") or row.get("browse_name") or "").lower()
     blob = " ".join(part for part in (section_key, opc_path, label) if part)
     if should_exclude_section(section_key, settings.assistant_excluded_section_key_list):
+        if explicit_plc_context and section_key == "i":
+            return None
         if explicit_alarm_context and "alarm system" in section_key:
             return None
         return "excluded_section"
@@ -518,6 +595,8 @@ def get_assistant_diagnostics() -> dict[str, Any]:
         "bad_bags_tag_path": settings.assistant_bad_bags_tag_path,
         "total_bags_tag_path": settings.assistant_total_bags_tag_path,
         "production_mode": settings.assistant_production_mode,
+        "llm_send_raw": settings.assistant_llm_send_raw,
+        "expose_raw_response": settings.assistant_expose_raw_response,
         "running_speed_threshold": settings.assistant_running_speed_threshold,
         "min_stop_minutes": settings.assistant_min_stop_minutes,
         "max_rows": settings.assistant_max_rows,
@@ -989,6 +1068,7 @@ def get_most_changed_parameters(
         placeholders = ",".join(["%s"] * len(allowed_tag_ids))
         allowed_sql = f" AND v.tag_id IN ({placeholders})"
         allowed_params.extend(allowed_tag_ids)
+    max_ranked_tags = max(int(settings.assistant_max_rows or 0), max(limit, 1))
     rows = pool.fetch_all(
         f"""
         SELECT
@@ -1003,7 +1083,9 @@ def get_most_changed_parameters(
             MAX(v.value_num) AS max_value,
             AVG(v.value_num) AS avg_value,
             SUM(v.value_num) AS sum_value,
-            SUM(v.value_num * v.value_num) AS sum_sq_value
+            SUM(v.value_num * v.value_num) AS sum_sq_value,
+            (MAX(v.value_num) - MIN(v.value_num)) AS range_value,
+            ((MAX(v.value_num) - MIN(v.value_num)) / GREATEST(ABS(AVG(v.value_num)), 1)) AS movement_score
         FROM opc_tag_values v
         JOIN opc_tags t ON t.tag_id = v.tag_id
         LEFT JOIN opc_tag_display_config cfg ON cfg.tag_id = t.tag_id AND cfg.machine_id = t.machine_id
@@ -1015,17 +1097,23 @@ def get_most_changed_parameters(
           {section_sql}
           {allowed_sql}
         GROUP BY v.tag_id, t.opc_path, t.display_name, t.browse_name, t.node_id, cfg.section_key
-        ORDER BY sample_count DESC, t.tag_id
+        ORDER BY movement_score DESC, range_value DESC, t.tag_id
         LIMIT %s
         """,
-        tuple([_machine_id(), time_range.start, time_range.end, *section_params, *allowed_params, settings.assistant_max_rows]),
+        tuple([_machine_id(), time_range.start, time_range.end, *section_params, *allowed_params, max_ranked_tags + 1]),
     )
+    truncated = len(rows) > max_ranked_tags
+    if truncated:
+        rows = rows[:max_ranked_tags]
     ranked: list[dict[str, Any]] = []
     excluded_counts = _excluded_counts()
     keep_tag_id_set = set(keep_tag_ids or [])
     machine_speed_context: dict[str, Any] | None = None
     state_changes: list[dict[str, Any]] = []
     dependent_speed_changes: list[dict[str, Any]] = []
+    alarm_changes: list[dict[str, Any]] = []
+    counter_changes: list[dict[str, Any]] = []
+    plc_changes: list[dict[str, Any]] = []
     for row in rows:
         item = row_json_safe(row)
         min_value = float(row.get("min_value") or 0)
@@ -1053,43 +1141,35 @@ def get_most_changed_parameters(
         )
         if exclusion_reason:
             excluded_counts[exclusion_reason] += 1
+            bucket = _context_bucket_for_filtered_row(
+                item,
+                explicit_alarm_context=explicit_alarm_context,
+                explicit_counter_context=explicit_counter_context,
+                explicit_plc_context=explicit_plc_context,
+            )
+            if bucket and float(item["range_value"]) > 0:
+                if bucket == "alarm_changes":
+                    alarm_changes.append(_most_changed_context_row(item))
+                    excluded_counts["alarm_context"] += 1
+                elif bucket == "counter_changes":
+                    counter_changes.append(_most_changed_context_row(item))
+                    excluded_counts["counter_context"] += 1
+                elif bucket == "plc_changes":
+                    plc_changes.append(_most_changed_context_row(item))
+                    excluded_counts["plc_context"] += 1
             continue
-        if speed_tag_id and int(item.get("tag_id") or 0) == speed_tag_id and not explicit_speed_context:
+        if _is_machine_speed_context_row(item, speed_tag_id) and not explicit_speed_context:
             excluded_counts["machine_speed_context"] += 1
             machine_speed_context = _speed_context_row(item)
             continue
         if _is_state_context_row(item, explicit_state_context=explicit_state_context):
             if float(item["range_value"]) > 0:
-                state_changes.append(
-                    {
-                        "label": item.get("label"),
-                        "display_name": item.get("display_name"),
-                        "section_key": item.get("section_key"),
-                        "opc_path": item.get("opc_path"),
-                        "min": item.get("min_value"),
-                        "max": item.get("max_value"),
-                        "avg": item.get("avg_value"),
-                        "range": item.get("range_value"),
-                        "sample_count": item.get("sample_count"),
-                    }
-                )
+                state_changes.append(_most_changed_context_row(item))
             excluded_counts["state_context"] += 1
             continue
         if _is_dependent_speed_context_row(item, explicit_speed_context=explicit_speed_context):
             if float(item["range_value"]) > 0:
-                dependent_speed_changes.append(
-                    {
-                        "label": item.get("label"),
-                        "display_name": item.get("display_name"),
-                        "section_key": item.get("section_key"),
-                        "opc_path": item.get("opc_path"),
-                        "min": item.get("min_value"),
-                        "max": item.get("max_value"),
-                        "avg": item.get("avg_value"),
-                        "range": item.get("range_value"),
-                        "sample_count": item.get("sample_count"),
-                    }
-                )
+                dependent_speed_changes.append(_most_changed_context_row(item))
             excluded_counts["dependent_speed_context"] += 1
             continue
         if float(item["range_value"]) == 0:
@@ -1098,17 +1178,29 @@ def get_most_changed_parameters(
         ranked.append(item)
     ranked = dedupe_rows(ranked, lambda row: (float(row.get("movement_score") or 0), float(row.get("range_value") or 0)))
     ranked.sort(key=lambda row: (row["movement_score"], row["range_value"]), reverse=True)
-    state_changes = dedupe_rows(state_changes, lambda row: float(row.get("range") or 0))
-    dependent_speed_changes = dedupe_rows(dependent_speed_changes, lambda row: float(row.get("range") or 0))
+    state_changes = dedupe_rows(state_changes, _context_score)
+    dependent_speed_changes = dedupe_rows(dependent_speed_changes, _context_score)
+    alarm_changes = dedupe_rows(alarm_changes, _context_score)
+    counter_changes = dedupe_rows(counter_changes, _context_score)
+    plc_changes = dedupe_rows(plc_changes, _context_score)
     return {
         "range": _range_dict(time_range),
         "section": section,
         "parameters": ranked[: max(limit, 1)],
         "excluded_counts": excluded_counts,
+        "limits": {
+            "candidate_tag_limit": max_ranked_tags,
+            "candidate_tags_returned": len(rows),
+            "truncated": truncated,
+            "note": "SQL aggregation is ranked before this safety cap; Python process filters are applied before visible output.",
+        },
         "context": {
             **({"machine_speed": machine_speed_context} if machine_speed_context else {}),
             **({"state_changes": state_changes[:10]} if state_changes else {}),
             **({"dependent_speed_changes": dependent_speed_changes[:10]} if dependent_speed_changes else {}),
+            **({"alarm_changes": alarm_changes[:5]} if alarm_changes and (explicit_alarm_context or len(alarm_changes) <= 5) else {}),
+            **({"counter_changes": counter_changes[:5]} if counter_changes and (explicit_counter_context or len(counter_changes) <= 5) else {}),
+            **({"plc_changes": plc_changes[:5]} if plc_changes and (explicit_plc_context or len(plc_changes) <= 5) else {}),
         },
     }
 
@@ -1150,17 +1242,22 @@ def get_values_around_stop(
         placeholders = ",".join(["%s"] * len(allowed_tag_ids))
         allowed_sql = f" AND v.tag_id IN ({placeholders})"
         allowed_params.extend(allowed_tag_ids)
-    rows = pool.fetch_all(
+    max_candidate_tags = max(int(settings.assistant_max_rows or 0), max(limit, 1))
+    candidate_rows = pool.fetch_all(
         f"""
         SELECT
             v.tag_id,
-            v.created_at,
-            v.value_num,
             t.opc_path,
             t.display_name,
             t.browse_name,
             t.node_id,
-            cfg.section_key
+            cfg.section_key,
+            COUNT(*) AS sample_count,
+            MIN(v.value_num) AS min_value,
+            MAX(v.value_num) AS max_value,
+            AVG(v.value_num) AS avg_value,
+            (MAX(v.value_num) - MIN(v.value_num)) AS range_value,
+            ((MAX(v.value_num) - MIN(v.value_num)) / GREATEST(ABS(AVG(v.value_num)), 1)) AS movement_score
         FROM opc_tag_values v
         JOIN opc_tags t ON t.tag_id = v.tag_id
         LEFT JOIN opc_tag_display_config cfg ON cfg.tag_id = t.tag_id AND cfg.machine_id = t.machine_id
@@ -1171,11 +1268,43 @@ def get_values_around_stop(
           AND v.value_num IS NOT NULL
           {section_sql}
           {allowed_sql}
-        ORDER BY v.tag_id, v.created_at
+        GROUP BY v.tag_id, t.opc_path, t.display_name, t.browse_name, t.node_id, cfg.section_key
+        ORDER BY movement_score DESC, range_value DESC, t.tag_id
         LIMIT %s
         """,
-        tuple([_machine_id(), before_start, after_end, *section_params, *allowed_params, settings.assistant_max_rows]),
+        tuple([_machine_id(), before_start, after_end, *section_params, *allowed_params, max_candidate_tags + 1]),
     )
+    truncated = len(candidate_rows) > max_candidate_tags
+    if truncated:
+        candidate_rows = candidate_rows[:max_candidate_tags]
+    candidate_tag_ids = [int(row["tag_id"]) for row in candidate_rows if row.get("tag_id") is not None]
+    rows: list[dict[str, Any]] = []
+    if candidate_tag_ids:
+        placeholders = ",".join(["%s"] * len(candidate_tag_ids))
+        rows = pool.fetch_all(
+            f"""
+            SELECT
+                v.tag_id,
+                v.created_at,
+                v.value_num,
+                t.opc_path,
+                t.display_name,
+                t.browse_name,
+                t.node_id,
+                cfg.section_key
+            FROM opc_tag_values v
+            JOIN opc_tags t ON t.tag_id = v.tag_id
+            LEFT JOIN opc_tag_display_config cfg ON cfg.tag_id = t.tag_id AND cfg.machine_id = t.machine_id
+            WHERE t.machine_id = %s
+              AND v.created_at >= %s
+              AND v.created_at <= %s
+              AND v.value_kind = 1
+              AND v.value_num IS NOT NULL
+              AND v.tag_id IN ({placeholders})
+            ORDER BY v.tag_id, v.created_at
+            """,
+            tuple([_machine_id(), before_start, after_end, *candidate_tag_ids]),
+        )
     if not rows:
         return {
             "stop_time": _as_iso(stop_time),
@@ -1187,6 +1316,12 @@ def get_values_around_stop(
             "after_stop_effect": [],
             "excluded_counts": _excluded_counts(),
             "context": context or {},
+            "limits": {
+                "candidate_tag_limit": max_candidate_tags,
+                "candidate_tags_returned": len(candidate_rows),
+                "truncated": truncated,
+                "note": "Candidate tags are selected before fetching around-stop samples.",
+            },
         }
     grouped: dict[int, list[dict[str, Any]]] = defaultdict(list)
     for row in rows:
@@ -1197,6 +1332,9 @@ def get_values_around_stop(
     machine_speed_context: dict[str, Any] | None = None
     state_changes: list[dict[str, Any]] = []
     dependent_speed_changes: list[dict[str, Any]] = []
+    alarm_changes: list[dict[str, Any]] = []
+    counter_changes: list[dict[str, Any]] = []
+    plc_changes: list[dict[str, Any]] = []
     for tag_rows in grouped.values():
         before = [row for row in tag_rows if row.get("created_at") and row["created_at"] < stop_time]
         after = [row for row in tag_rows if row.get("created_at") and row["created_at"] >= stop_time]
@@ -1237,8 +1375,24 @@ def get_values_around_stop(
         )
         if exclusion_reason:
             excluded_counts[exclusion_reason] += 1
+            bucket = _context_bucket_for_filtered_row(
+                item,
+                explicit_alarm_context=explicit_alarm_context,
+                explicit_counter_context=explicit_counter_context,
+                explicit_plc_context=explicit_plc_context,
+            )
+            if bucket and (item["before_movement_score"] > 0 or item["after_effect_score"] > 0 or item["movement_score"] > 0):
+                if bucket == "alarm_changes":
+                    alarm_changes.append(_around_context_row(item))
+                    excluded_counts["alarm_context"] += 1
+                elif bucket == "counter_changes":
+                    counter_changes.append(_around_context_row(item))
+                    excluded_counts["counter_context"] += 1
+                elif bucket == "plc_changes":
+                    plc_changes.append(_around_context_row(item))
+                    excluded_counts["plc_context"] += 1
             continue
-        if speed_tag_id and int(item.get("tag_id") or 0) == speed_tag_id:
+        if _is_machine_speed_context_row(item, speed_tag_id):
             excluded_counts["machine_speed_context"] += 1
             machine_speed_context = {
                 "tag_id": item.get("tag_id"),
@@ -1258,73 +1412,53 @@ def get_values_around_stop(
                 changes.append(item)
                 continue
             if item["before_movement_score"] > 0 or item["after_effect_score"] > 0:
-                state_changes.append(
-                    {
-                        "label": item.get("label"),
-                        "display_name": item.get("display_name"),
-                        "section_key": item.get("section_key"),
-                        "opc_path": item.get("opc_path"),
-                        "before_avg": item.get("before_avg"),
-                        "after_avg": item.get("after_avg"),
-                        "delta_avg": item.get("delta_avg"),
-                        "before_stop_movement": item.get("before_stop_movement"),
-                        "after_stop_effect": item.get("after_stop_effect"),
-                    }
-                )
+                state_changes.append(_around_context_row(item))
             excluded_counts["state_context"] += 1
             continue
-        if _is_dependent_speed_context_row(item, explicit_speed_context=explicit_speed_context):
+        if _is_dependent_speed_row(item):
             if item["before_movement_score"] > 0 or item["after_effect_score"] > 0 or explicit_speed_context:
-                dependent_speed_changes.append(
-                    {
-                        "label": item.get("label"),
-                        "display_name": item.get("display_name"),
-                        "section_key": item.get("section_key"),
-                        "opc_path": item.get("opc_path"),
-                        "before_avg": item.get("before_avg"),
-                        "after_avg": item.get("after_avg"),
-                        "delta_avg": item.get("delta_avg"),
-                        "before_stop_movement": item.get("before_stop_movement"),
-                        "after_stop_effect": item.get("after_stop_effect"),
-                    }
-                )
+                dependent_speed_changes.append(_around_context_row(item))
             excluded_counts["dependent_speed_context"] += 1
-            if not explicit_speed_context:
-                continue
-            # Keep dependent speed as context even during explicit speed questions.
             continue
         if item["before_stop_movement"] == 0 and item["after_stop_effect"] == 0 and item["delta_avg"] == 0:
             excluded_counts["zero_range"] += 1
             continue
         changes.append(item)
-    visible = dedupe_rows(
-        changes,
-        lambda row: max(float(row.get("before_movement_score") or 0), float(row.get("after_effect_score") or 0), float(row.get("movement_score") or 0)),
-    )
-    visible = [item for item in visible if float(item.get("before_movement_score") or 0) > 0 or float(item.get("after_effect_score") or 0) > 0]
-    before_rows = [item for item in visible if float(item.get("before_movement_score") or 0) > 0]
-    after_rows = [item for item in visible if float(item.get("after_effect_score") or 0) > 0]
+    before_rows, after_rows = _rank_visible_around_stop_rows(changes, limit)
     state_changes = dedupe_rows(
         [row for row in state_changes if explicit_state_context or float(row.get("before_stop_movement") or 0) != 0 or float(row.get("after_stop_effect") or 0) != 0 or float(row.get("delta_avg") or 0) != 0],
-        lambda row: max(abs(float(row.get("before_stop_movement") or 0)), abs(float(row.get("after_stop_effect") or 0)), abs(float(row.get("delta_avg") or 0))),
+        _context_score,
     )
     dependent_speed_changes = dedupe_rows(
         [row for row in dependent_speed_changes if explicit_speed_context or float(row.get("before_stop_movement") or 0) != 0 or float(row.get("after_stop_effect") or 0) != 0 or float(row.get("delta_avg") or 0) != 0],
-        lambda row: max(abs(float(row.get("before_stop_movement") or 0)), abs(float(row.get("after_stop_effect") or 0)), abs(float(row.get("delta_avg") or 0))),
+        _context_score,
     )
+    alarm_changes = dedupe_rows(alarm_changes, _context_score)
+    counter_changes = dedupe_rows(counter_changes, _context_score)
+    plc_changes = dedupe_rows(plc_changes, _context_score)
     return {
         "stop_time": _as_iso(stop_time),
         "section": section,
         "before_minutes": before_minutes,
         "after_minutes": after_minutes,
-        "before_stop_movement": sorted(before_rows, key=lambda row: (row["before_movement_score"], abs(row["before_stop_movement"])), reverse=True)[: max(limit, 1)],
-        "after_stop_effect": sorted(after_rows, key=lambda row: (row["after_effect_score"], abs(row["after_stop_effect"])), reverse=True)[: max(limit, 1)],
+        "before_stop_movement": before_rows,
+        "after_stop_effect": after_rows,
         "excluded_counts": excluded_counts,
+        "limits": {
+            "candidate_tag_limit": max_candidate_tags,
+            "candidate_tags_returned": len(candidate_rows),
+            "truncated": truncated,
+            "raw_rows_fetched": len(rows),
+            "note": "Candidate tags are selected before fetching around-stop samples; truncated=true means the analysis is capped.",
+        },
         "context": {
             **(context or {}),
             **({"machine_speed": machine_speed_context} if machine_speed_context else {}),
             **({"state_changes": state_changes[:10]} if state_changes else {}),
             **({"dependent_speed_changes": dependent_speed_changes[:10]} if dependent_speed_changes else {}),
+            **({"alarm_changes": alarm_changes[:5]} if alarm_changes and (explicit_alarm_context or len(alarm_changes) <= 5) else {}),
+            **({"counter_changes": counter_changes[:5]} if counter_changes and (explicit_counter_context or len(counter_changes) <= 5) else {}),
+            **({"plc_changes": plc_changes[:5]} if plc_changes and (explicit_plc_context or len(plc_changes) <= 5) else {}),
         },
     }
 

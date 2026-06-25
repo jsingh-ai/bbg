@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import subprocess
 from datetime import datetime
@@ -11,6 +12,7 @@ from .assistant_context import (
     apply_followup_context,
     clear_conversation,
     cleanup_old_conversations,
+    get_conversation_memory_stats,
     get_recent_turns,
     remember_turn,
 )
@@ -37,6 +39,7 @@ from .section_parser import parse_section_key
 
 
 SERVICE_STARTED_AT = datetime.now().isoformat()
+logger = logging.getLogger(__name__)
 
 
 def _build_cards(items: list[tuple[str, Any, str | None]]) -> list[dict[str, Any]]:
@@ -69,6 +72,7 @@ def _assistant_version_payload() -> dict[str, Any]:
         "process_id": os.getpid(),
         "git_commit": _git_value("rev-parse", "HEAD"),
         "git_branch": _git_value("branch", "--show-current"),
+        "conversation_memory": get_conversation_memory_stats(),
     }
 
 
@@ -191,7 +195,8 @@ def _deterministic_answer(intent: str, raw: dict[str, Any]) -> str:
             return "No visible process parameter movement was found for that range after applying the default filters."
         labels = ", ".join(_top_labels(top))
         prefix = f"In {raw['section']}, " if raw.get("section") else ""
-        return f"{prefix}the most changed parameters were {labels}."
+        limit_suffix = " This analysis hit the configured safety cap, so treat it as a capped ranking." if (raw.get("limits") or {}).get("truncated") else ""
+        return f"{prefix}the most changed parameters were {labels}.{limit_suffix}"
 
     if intent == "values_around_last_stop":
         after = raw.get("after_stop_effect") or []
@@ -201,16 +206,17 @@ def _deterministic_answer(intent: str, raw: dict[str, Any]) -> str:
         machine_speed = raw.get("context", {}).get("machine_speed")
         explicit_speed_context = bool(route.get("explicit_speed_context"))
         suffix = " The last stop is still open." if raw.get("context", {}).get("stop_is_open_ended") else ""
+        limit_suffix = " This analysis hit the configured safety cap, so treat it as a capped ranking." if (raw.get("limits") or {}).get("truncated") else ""
         if not after and not before:
             stop_time = raw.get("stop_time") or "the detected stop time"
             if explicit_speed_context and (machine_speed or speed_context):
                 return (
                     f"The machine speed dropped to zero at {stop_time}. I kept speed and performance rows in context for this request. "
-                    f"No other ranked process variables met the selected thresholds.{suffix}"
+                    f"No other ranked process variables met the selected thresholds.{suffix}{limit_suffix}"
                 )
             return (
                 f"The machine speed dropped to zero at {stop_time}. After filtering counters, alarms, PLC/IO, state/status values, dependent speeds, zero-range values, and the speed marker itself, "
-                f"I did not find other process variables that changed enough in the selected window.{suffix}"
+                f"I did not find other process variables that changed enough in the selected window.{suffix}{limit_suffix}"
             )
         if explicit_speed_context:
             before_label = f"{before[0]['label']} in {before[0]['section_key']}" if before else "n/a"
@@ -220,14 +226,14 @@ def _deterministic_answer(intent: str, raw: dict[str, Any]) -> str:
                 f"I included machine speed and dependent speed/performance rows in the Speed / Performance Context table. "
                 f"The largest observed non-speed pre-stop movement was {before_label}. "
                 f"The largest observed non-speed post-stop effect was {after_label}. "
-                f"This is correlation around the stop, not proof of cause.{suffix}"
+                f"This is correlation around the stop, not proof of cause.{suffix}{limit_suffix}"
             )
         after_label = f"{after[0]['label']} in {after[0]['section_key']}" if after else "n/a"
         before_label = f"{before[0]['label']} in {before[0]['section_key']}" if before else "n/a"
         return (
             f"Around the last stop, the largest observed pre-stop movement was {before_label}. "
             f"The largest observed post-stop effect was {after_label}. "
-            f"This is correlation around the stop, not proof of cause.{suffix}"
+            f"This is correlation around the stop, not proof of cause.{suffix}{limit_suffix}"
         )
 
     if intent == "section_summary":
@@ -247,41 +253,170 @@ def _deterministic_answer(intent: str, raw: dict[str, Any]) -> str:
     )
 
 
-def _openai_answer(message: str, intent: str, raw: dict[str, Any]) -> str | None:
+def _compact_route(route: dict[str, Any] | None) -> dict[str, Any]:
+    route = route or {}
+    return {
+        "intent": route.get("intent"),
+        "time_range": route.get("time_range"),
+        "compare_to": route.get("compare_to"),
+        "matched_rule": route.get("matched_rule"),
+        "resolved_system": route.get("resolved_system"),
+        "section_terms": route.get("section_terms"),
+        "followup": {
+            "used_context": (route.get("followup") or {}).get("used_context"),
+            "reason": (route.get("followup") or {}).get("reason"),
+            "resolved_intent": (route.get("followup") or {}).get("resolved_intent"),
+            "resolved_time_range": (route.get("followup") or {}).get("resolved_time_range"),
+        },
+    }
+
+
+def _sanitize_tables_for_llm(tables: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    sanitized: list[dict[str, Any]] = []
+    for table in tables or []:
+        columns = list(table.get("columns") or [])
+        keep_indexes = [
+            index
+            for index, column in enumerate(columns)
+            if "opc path" not in str(column).lower() and "configured path" not in str(column).lower()
+        ]
+        sanitized.append(
+            {
+                "title": table.get("title"),
+                "columns": [columns[index] for index in keep_indexes],
+                "rows": [
+                    [cell for index, cell in enumerate(row) if index in keep_indexes]
+                    for row in table.get("rows", [])
+                ],
+            }
+        )
+    return sanitized
+
+
+def _sanitize_error_for_llm(error: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not error:
+        return None
+    return {
+        key: value
+        for key, value in error.items()
+        if key not in {"configured_path", "configured_paths", "opc_path", "suggestions"}
+    }
+
+
+def _build_sanitized_llm_payload(
+    message: str,
+    intent: str,
+    raw: dict[str, Any],
+    cards: list[dict[str, Any]] | None = None,
+    tables: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "intent": intent,
+        "question": message,
+        "route": _compact_route(raw.get("route")),
+        "cards": cards or [],
+        "tables": _sanitize_tables_for_llm(tables),
+    }
+    if raw.get("error"):
+        payload["error"] = _sanitize_error_for_llm(raw.get("error"))
+    for key in ("warnings", "range", "limits", "stop_time"):
+        if key in raw:
+            payload[key] = raw[key]
+    if raw.get("context", {}).get("stop_is_open_ended"):
+        payload["context"] = {"stop_is_open_ended": True}
+    return payload
+
+
+def _build_openai_messages(
+    message: str,
+    intent: str,
+    raw: dict[str, Any],
+    cards: list[dict[str, Any]] | None = None,
+    tables: list[dict[str, Any]] | None = None,
+    *,
+    send_raw: bool = False,
+) -> list[dict[str, str]]:
+    system_prompt = (
+        "You are only rewriting the supplied backend-computed JSON. "
+        "Only use supplied JSON. Do not invent numbers, causes, alerts, tags, downtime, or recommendations not present in the JSON. "
+        "If a value is not present, say it is not available. "
+        "Do not claim causation; say observed or correlated if applicable. "
+        "Keep the answer short and plant-floor practical. "
+        "Do not mention SQL or internal implementation details. "
+        "Preserve warnings from the backend."
+    )
+    prompt = {"intent": intent, "question": message, "analysis_result": raw} if send_raw else _build_sanitized_llm_payload(message, intent, raw, cards, tables)
+    return [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": json.dumps(prompt, default=str)},
+    ]
+
+
+def _openai_answer(message: str, intent: str, raw: dict[str, Any], cards: list[dict[str, Any]], tables: list[dict[str, Any]]) -> str | None:
     settings = get_settings()
     if not settings.assistant_llm_enabled:
         return None
     try:
         from openai import OpenAI
-    except Exception:
+    except Exception as exc:
+        logger.exception("OpenAI SDK import failed for assistant answer generation: %s", exc)
         return None
 
-    client = OpenAI(api_key=settings.openai_api_key)
-    prompt = {
-        "intent": intent,
-        "question": message,
-        "analysis_result": raw,
-        "rules": [
-            "Be concise and factual.",
-            "Use the computed backend numbers directly.",
-            "Do not claim causation unless the data only shows correlation.",
-            "This is a read-only production/process analyst for OPC history.",
-        ],
+    try:
+        client = OpenAI(api_key=settings.openai_api_key, timeout=settings.openai_timeout_seconds)
+    except TypeError:
+        client = OpenAI(api_key=settings.openai_api_key)
+    except Exception as exc:
+        logger.exception("OpenAI client initialization failed for assistant answer generation: %s", exc)
+        return None
+    messages = _build_openai_messages(message, intent, raw, cards, tables, send_raw=settings.assistant_llm_send_raw)
+    request_payload = {
+        "model": settings.openai_model,
+        "input": messages,
+        "max_output_tokens": settings.openai_max_output_tokens,
+        "temperature": settings.openai_temperature,
     }
     try:
-        response = client.responses.create(
-            model=settings.openai_model,
-            input=[
-                {
-                    "role": "system",
-                    "content": "You explain industrial process analytics from structured data. Stay concise, practical, and read-only.",
-                },
-                {"role": "user", "content": json.dumps(prompt, default=str)},
-            ],
-        )
-    except Exception:
+        response = client.responses.create(**request_payload)
+    except Exception as exc:
+        if "temperature" in str(exc).lower():
+            request_payload.pop("temperature", None)
+            try:
+                response = client.responses.create(**request_payload)
+            except Exception as retry_exc:
+                logger.exception("OpenAI Responses API retry failed; chat-completions fallback will be attempted: %s", retry_exc)
+                response = None
+        else:
+            logger.exception("OpenAI Responses API failed; chat-completions fallback will be attempted: %s", exc)
+            response = None
+    if response is not None:
+        output_text = getattr(response, "output_text", None)
+        if output_text:
+            return output_text
+    chat_payload = {
+        "model": settings.openai_model,
+        "messages": messages,
+        "max_tokens": settings.openai_max_output_tokens,
+        "temperature": settings.openai_temperature,
+    }
+    try:
+        chat_response = client.chat.completions.create(**chat_payload)
+    except Exception as exc:
+        if "temperature" in str(exc).lower():
+            chat_payload.pop("temperature", None)
+            try:
+                chat_response = client.chat.completions.create(**chat_payload)
+            except Exception as retry_exc:
+                logger.exception("OpenAI chat-completions fallback failed; deterministic fallback will be used: %s", retry_exc)
+                return None
+        else:
+            logger.exception("OpenAI chat-completions fallback failed; deterministic fallback will be used: %s", exc)
+            return None
+    choices = getattr(chat_response, "choices", None) or []
+    if not choices:
         return None
-    return getattr(response, "output_text", None) or None
+    message_obj = getattr(choices[0], "message", None)
+    return getattr(message_obj, "content", None) or None
 
 
 def _format_production_response(raw: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -391,10 +526,39 @@ def _format_most_changed_response(raw: dict[str, Any]) -> tuple[list[dict[str, A
     tables.append(
         _build_table(
             "Excluded Rows",
-            ["Excluded Section", "Excluded Tag Term", "Zero Range", "Machine Speed Context", "State Context", "Dependent Speed Context"],
-            [[excluded.get("excluded_section", 0), excluded.get("excluded_tag_term", 0), excluded.get("zero_range", 0), excluded.get("machine_speed_context", 0), excluded.get("state_context", 0), excluded.get("dependent_speed_context", 0)]],
+            [
+                "Excluded Section",
+                "Excluded Tag Term",
+                "Zero Range",
+                "Machine Speed Context",
+                "State Context",
+                "Dependent Speed Context",
+                "Alarm Context",
+                "Counter Context",
+                "PLC Context",
+            ],
+            [[
+                excluded.get("excluded_section", 0),
+                excluded.get("excluded_tag_term", 0),
+                excluded.get("zero_range", 0),
+                excluded.get("machine_speed_context", 0),
+                excluded.get("state_context", 0),
+                excluded.get("dependent_speed_context", 0),
+                excluded.get("alarm_context", 0),
+                excluded.get("counter_context", 0),
+                excluded.get("plc_context", 0),
+            ]],
         )
     )
+    limits = raw.get("limits") or {}
+    if limits:
+        tables.append(
+            _build_table(
+                "Query Limits",
+                ["Candidate Tag Limit", "Candidate Tags Returned", "Truncated", "Note"],
+                [[limits.get("candidate_tag_limit"), limits.get("candidate_tags_returned"), bool(limits.get("truncated")), limits.get("note")]],
+            )
+        )
     context = raw.get("context") or {}
     if context.get("state_changes"):
         tables.append(
@@ -425,6 +589,22 @@ def _format_most_changed_response(raw: dict[str, Any]) -> tuple[list[dict[str, A
                 speed_rows,
             )
         )
+    for key, title in (
+        ("alarm_changes", "Alarm Context"),
+        ("counter_changes", "Counter Context"),
+        ("plc_changes", "PLC / IO Context"),
+    ):
+        if context.get(key):
+            tables.append(
+                _build_table(
+                    title,
+                    ["Section", "Variable", "Min", "Max", "Range", "Avg", "Samples"],
+                    [
+                        [item.get("section_key"), item.get("label"), item.get("min"), item.get("max"), item.get("range"), item.get("avg"), item.get("sample_count")]
+                        for item in context.get(key, [])
+                    ],
+                )
+            )
     return cards, tables
 
 
@@ -474,10 +654,39 @@ def _format_around_stop_response(raw: dict[str, Any]) -> tuple[list[dict[str, An
     tables.append(
         _build_table(
             "Excluded Rows",
-            ["Excluded Section", "Excluded Tag Term", "Zero Range", "Machine Speed Context", "State Context", "Dependent Speed Context"],
-            [[excluded.get("excluded_section", 0), excluded.get("excluded_tag_term", 0), excluded.get("zero_range", 0), excluded.get("machine_speed_context", 0), excluded.get("state_context", 0), excluded.get("dependent_speed_context", 0)]],
+            [
+                "Excluded Section",
+                "Excluded Tag Term",
+                "Zero Range",
+                "Machine Speed Context",
+                "State Context",
+                "Dependent Speed Context",
+                "Alarm Context",
+                "Counter Context",
+                "PLC Context",
+            ],
+            [[
+                excluded.get("excluded_section", 0),
+                excluded.get("excluded_tag_term", 0),
+                excluded.get("zero_range", 0),
+                excluded.get("machine_speed_context", 0),
+                excluded.get("state_context", 0),
+                excluded.get("dependent_speed_context", 0),
+                excluded.get("alarm_context", 0),
+                excluded.get("counter_context", 0),
+                excluded.get("plc_context", 0),
+            ]],
         )
     )
+    limits = raw.get("limits") or {}
+    if limits:
+        tables.append(
+            _build_table(
+                "Query Limits",
+                ["Candidate Tag Limit", "Candidate Tags Returned", "Raw Rows Fetched", "Truncated", "Note"],
+                [[limits.get("candidate_tag_limit"), limits.get("candidate_tags_returned"), limits.get("raw_rows_fetched"), bool(limits.get("truncated")), limits.get("note")]],
+            )
+        )
     context = raw.get("context") or {}
     if context.get("state_changes"):
         tables.append(
@@ -534,6 +743,30 @@ def _format_around_stop_response(raw: dict[str, Any]) -> tuple[list[dict[str, An
                 speed_rows,
             )
         )
+    for key, title in (
+        ("alarm_changes", "Alarm Context"),
+        ("counter_changes", "Counter Context"),
+        ("plc_changes", "PLC / IO Context"),
+    ):
+        if context.get(key):
+            tables.append(
+                _build_table(
+                    title,
+                    ["Section", "Variable", "Before Avg", "After Avg", "Delta Avg", "Before Movement", "After Effect"],
+                    [
+                        [
+                            item.get("section_key"),
+                            item.get("label"),
+                            item.get("before_avg"),
+                            item.get("after_avg"),
+                            item.get("delta_avg"),
+                            item.get("before_stop_movement"),
+                            item.get("after_stop_effect"),
+                        ]
+                        for item in context.get(key, [])
+                    ],
+                )
+            )
     return cards, tables
 
 
@@ -553,8 +786,28 @@ def _format_section_response(raw: dict[str, Any]) -> tuple[list[dict[str, Any]],
     tables.append(
         _build_table(
             "Excluded Rows",
-            ["Excluded Section", "Excluded Tag Term", "Zero Range", "Machine Speed Context", "State Context", "Dependent Speed Context"],
-            [[excluded.get("excluded_section", 0), excluded.get("excluded_tag_term", 0), excluded.get("zero_range", 0), excluded.get("machine_speed_context", 0), excluded.get("state_context", 0), excluded.get("dependent_speed_context", 0)]],
+            [
+                "Excluded Section",
+                "Excluded Tag Term",
+                "Zero Range",
+                "Machine Speed Context",
+                "State Context",
+                "Dependent Speed Context",
+                "Alarm Context",
+                "Counter Context",
+                "PLC Context",
+            ],
+            [[
+                excluded.get("excluded_section", 0),
+                excluded.get("excluded_tag_term", 0),
+                excluded.get("zero_range", 0),
+                excluded.get("machine_speed_context", 0),
+                excluded.get("state_context", 0),
+                excluded.get("dependent_speed_context", 0),
+                excluded.get("alarm_context", 0),
+                excluded.get("counter_context", 0),
+                excluded.get("plc_context", 0),
+            ]],
         )
     )
     return cards, tables
@@ -594,8 +847,14 @@ def handle_assistant_chat(message: str, time_range: str | None = None, conversat
             "history_turns_available": 0,
             "previous_intent": None,
             "previous_time_range": None,
+            "original_intent": route.get("intent"),
+            "original_time_range": route.get("time_range"),
+            "resolved_intent": route.get("intent"),
+            "resolved_time_range": route.get("time_range"),
             "inherited_intent": None,
             "inherited_time_range": None,
+            "changed_intent": False,
+            "changed_time_range": False,
             "inherited_resolved_system": None,
             "inherited_section_terms": [],
         }
@@ -693,21 +952,29 @@ def handle_assistant_chat(message: str, time_range: str | None = None, conversat
         cards, tables = _format_fallback_response()
 
     raw["route"] = route
-    answer = _openai_answer(message, intent, raw) or _deterministic_answer(intent, raw)
+    llm_answer = _openai_answer(message, intent, raw, cards, tables)
+    if llm_answer:
+        raw["llm"] = {"used": True}
+        answer = llm_answer
+    else:
+        raw["llm"] = {"used": False, "error": "fallback_used"}
+        answer = _deterministic_answer(intent, raw)
     remember_turn(conversation_id, message, route, raw)
+    response_raw = raw if settings.assistant_expose_raw_response else {"route": route, "llm": raw.get("llm")}
     return {
         "answer": answer,
         "intent": intent,
         "conversation_id": conversation_id,
         "cards": cards,
         "tables": tables,
-        "raw": raw,
+        "raw": response_raw,
     }
 
 
 def get_assistant_diagnostics_response() -> dict[str, Any]:
     diagnostics = get_assistant_diagnostics()
     diagnostics["version"] = _assistant_version_payload()
+    diagnostics["conversation_memory"] = get_conversation_memory_stats()
     return diagnostics
 
 
