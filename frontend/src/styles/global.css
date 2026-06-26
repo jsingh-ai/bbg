@@ -1270,9 +1270,9 @@ p { color: var(--muted); margin-bottom: 0; }
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 240px;
-  max-height: min(34vh, 320px);
-  padding: 10px;
+  min-height: 170px;
+  max-height: min(24vh, 220px);
+  padding: 10px 12px 12px;
 }
 .section-values-column {
   display: flex;
@@ -1363,11 +1363,14 @@ p { color: var(--muted); margin-bottom: 0; }
 .section-values-scroll .value-table td:nth-child(1),
 .section-values-scroll .value-table th:nth-child(4),
 .section-values-scroll .value-table td:nth-child(4) {
-  width: 46px;
+  width: 62px;
 }
 .section-values-scroll .value-table th:nth-child(3),
 .section-values-scroll .value-table td:nth-child(3) {
   width: 118px;
+}
+.section-values-scroll .value-table th:nth-child(4) {
+  white-space: nowrap;
 }
 .section-values-scroll .value-table td:nth-child(2) {
   line-height: 1.24;
