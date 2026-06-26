@@ -138,11 +138,18 @@ function SectionPanel({
       <div className="panel-body section-panel-body">
         <div className="section-content-row">
           <div className="section-media-column">
+            <div className="section-photo-frame">
+              <div className="section-photo-header">
+                <span className="panel-eyebrow">Section View</span>
+              </div>
+              <div className="section-photo-stage">
             {liveQuery.data?.section.section_photo_url ? (
               <img className="section-photo" src={liveQuery.data.section.section_photo_url} alt={liveQuery.data.section.display_label} />
             ) : (
               <div className="section-photo-placeholder">No section photo found</div>
             )}
+              </div>
+            </div>
           </div>
           <div className="section-values-column">
             <h3 className="subheading">Shown Variables</h3>

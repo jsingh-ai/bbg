@@ -229,7 +229,7 @@ function HistoryChart({ machineId, sectionKey, numericValues, refreshMs, theme }
         <div className="panel-title-block">
           <span className="panel-eyebrow">History</span>
           <h2 className="panel-title">Historical Trends</h2>
-          <p className="panel-subtitle">Section: {sectionKey}. Use the live variable show controls to add or remove trend lines here.</p>
+          <p className="panel-subtitle">Trend of live values.</p>
         </div>
       </div>
       <div className="history-controls-bar">
@@ -302,7 +302,7 @@ export function SavedVariablesChart({
         <div className="panel-title-block">
           <span className="panel-eyebrow">Troubleshooting</span>
           <h2 className="panel-title">Saved Variables</h2>
-          <p className="panel-subtitle">Use saved variables for troubleshooting and compare values from different sections together.</p>
+          <p className="panel-subtitle">Use saved variables to compare values from different sections.</p>
         </div>
       </div>
       <div className="panel-body history-saved-body">
@@ -327,13 +327,6 @@ export function SavedVariablesChart({
         </div>
 
         <div className="history-compare-block">
-          <div className="panel-title-row panel-header history-compare-header">
-            <div className="panel-title-block">
-              <span className="panel-eyebrow">Cross-Section View</span>
-              <h2 className="panel-title">Saved Comparison Trends</h2>
-              <p className="panel-subtitle">Trend the saved troubleshooting variables independently from the selected section history.</p>
-            </div>
-          </div>
           <div className="history-controls-bar compare-controls-bar">
             <div className="history-controls">
               <label>
@@ -358,7 +351,7 @@ export function SavedVariablesChart({
               <table className="value-table compare-table">
                 <thead>
                   <tr>
-                    <th className="action-col">Remove</th>
+                    <th className="action-col" aria-label="Remove saved variable column"></th>
                     <th>Section</th>
                     <th>Variable</th>
                     <th>Current Value</th>
