@@ -20,6 +20,7 @@ import type {
 } from '../types';
 
 const API_BASE = '';
+const MAX_HISTORY_QUERY_TAGS = 25;
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
@@ -64,6 +65,9 @@ export const api = {
     payload: { is_visible?: boolean; show_in_history_default?: boolean; sort_order?: number }
   ) => request(`/api/machines/${machineId}/tags/${tagId}/config`, { method: 'PATCH', body: JSON.stringify(payload) }),
   getHistory: (machineId: number, start: string, end: string, tagIds: number[], sectionKey?: string | null) => {
+    if (tagIds.length > MAX_HISTORY_QUERY_TAGS) {
+      return Promise.resolve({ series: [], start, end });
+    }
     const params = new URLSearchParams();
     if (sectionKey) {
       params.set('section_key', sectionKey);

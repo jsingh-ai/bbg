@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { Eye, EyeOff, Plus } from 'lucide-react';
 import { api } from '../api/client';
 import type { LiveValue } from '../types';
@@ -141,6 +141,51 @@ function ValueRows({
   );
 }
 
+function ValueGroup({
+  label,
+  values,
+  initiallyOpen,
+  machineId,
+  visible,
+  onSaveVariable,
+  savedVariableIds,
+  savedVariableLimitReached
+}: {
+  label: string;
+  values: LiveValue[];
+  initiallyOpen: boolean;
+  machineId: number;
+  visible: boolean;
+  onSaveVariable?: (value: LiveValue) => void;
+  savedVariableIds: number[];
+  savedVariableLimitReached: boolean;
+}) {
+  const detailsRef = useRef<HTMLDetailsElement | null>(null);
+
+  useEffect(() => {
+    if (detailsRef.current) {
+      detailsRef.current.open = initiallyOpen;
+    }
+  }, [initiallyOpen]);
+
+  return (
+    <details className="value-group" ref={detailsRef}>
+      <summary>
+        <span>{label}</span>
+        <strong>{values.length}</strong>
+      </summary>
+      <ValueRows
+        machineId={machineId}
+        values={values}
+        visible={visible}
+        onSaveVariable={onSaveVariable}
+        savedVariableIds={savedVariableIds}
+        savedVariableLimitReached={savedVariableLimitReached}
+      />
+    </details>
+  );
+}
+
 function GroupedValueRows({
   machineId,
   values,
@@ -159,38 +204,21 @@ function GroupedValueRows({
   className?: string;
 }) {
   const groups = useMemo(() => groupValues(values), [values]);
-  const [openGroups, setOpenGroups] = useState<Record<ValueGroupKey, boolean>>({
-    para: true,
-    state: true,
-    'temperature-control': true
-  });
 
   return (
     <div className={className ? `value-groups ${className}` : 'value-groups'}>
       {VALUE_GROUPS.map((group) => (
-        <details
-          className="value-group"
+        <ValueGroup
           key={group.key}
-          open={openGroups[group.key]}
-        >
-          <summary
-            onClick={(event) => {
-              event.preventDefault();
-              setOpenGroups((current) => ({ ...current, [group.key]: !current[group.key] }));
-            }}
-          >
-            <span>{group.label}</span>
-            <strong>{groups[group.key].length}</strong>
-          </summary>
-          <ValueRows
-            machineId={machineId}
-            values={groups[group.key]}
-            visible={visible}
-            onSaveVariable={onSaveVariable}
-            savedVariableIds={savedVariableIds}
-            savedVariableLimitReached={savedVariableLimitReached}
-          />
-        </details>
+          label={group.label}
+          values={groups[group.key]}
+          initiallyOpen={group.key === 'para'}
+          machineId={machineId}
+          visible={visible}
+          onSaveVariable={onSaveVariable}
+          savedVariableIds={savedVariableIds}
+          savedVariableLimitReached={savedVariableLimitReached}
+        />
       ))}
     </div>
   );
