@@ -1,10 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
 import * as echarts from 'echarts';
-import { X } from 'lucide-react';
+import { Gauge, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { api } from '../api/client';
 import { readThemeColor, type ThemeMode } from '../hooks/useTheme';
-import type { LiveValue, SavedHistoryVariable } from '../types';
+import type { LiveValue, SavedHistoryVariable, SummaryMetric } from '../types';
 
 export const MAX_SECTION_HISTORY_TRENDS = 15;
 export const MAX_SAVED_COMPARISON_TRENDS = 25;
@@ -24,6 +24,8 @@ interface SavedVariablesChartProps {
   refreshMs: number;
   theme: ThemeMode;
   savedVariables: SavedHistoryVariable[];
+  speedMetric?: SummaryMetric;
+  onToggleSpeedVariable: () => void;
   onRemoveSavedVariable: (tagId: number) => void;
   onClearSavedVariables: () => void;
 }
@@ -271,6 +273,8 @@ export function SavedVariablesChart({
   refreshMs,
   theme,
   savedVariables,
+  speedMetric,
+  onToggleSpeedVariable,
   onRemoveSavedVariable,
   onClearSavedVariables
 }: SavedVariablesChartProps) {
@@ -300,6 +304,8 @@ export function SavedVariablesChart({
   );
 
   const hasCompareSeriesData = useMemo(() => compareSeries.some((series) => series.points.length > 0), [compareSeries]);
+  const speedTagId = speedMetric?.tag_id;
+  const hasSpeedSaved = Boolean(speedTagId && savedVariables.some((item) => item.tag_id === speedTagId));
 
   useChart(compareChartRef, compareHistoryQuery.isFetching, historyEnabled, compareSeries, theme, 'Saved comparison');
 
@@ -316,9 +322,19 @@ export function SavedVariablesChart({
         <div className="history-chip-bar history-chip-bar-standalone">
           <div className="history-chip-header">
             <h3>Saved Comparison Set</h3>
-            <button className="secondary-button small-button" disabled={!savedVariables.length} onClick={onClearSavedVariables}>
-              Clear All
-            </button>
+            <div className="history-chip-actions">
+              <button
+                className={hasSpeedSaved ? 'secondary-button small-button active' : 'secondary-button small-button'}
+                disabled={!speedTagId}
+                onClick={onToggleSpeedVariable}
+                title={hasSpeedSaved ? 'Remove machine speed from saved comparison' : 'Add machine speed to saved comparison'}
+              >
+                <Gauge size={14} /> Speed
+              </button>
+              <button className="secondary-button small-button" disabled={!savedVariables.length} onClick={onClearSavedVariables}>
+                Clear All
+              </button>
+            </div>
           </div>
           <div className="history-chip-list">
             {savedVariables.map((item) => (

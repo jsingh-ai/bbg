@@ -119,6 +119,29 @@ function DashboardPage({ machineId, refreshSeconds, assistantEnabled, theme }: D
     });
   }, []);
 
+  const handleToggleSpeedVariable = useCallback(() => {
+    const speed = summaryQuery.data?.speed;
+    const speedTagId = speed?.tag_id;
+    if (!speedTagId) return;
+    setSavedVariables((prev) => {
+      if (prev.some((item) => item.tag_id === speedTagId)) {
+        return prev.filter((item) => item.tag_id !== speedTagId);
+      }
+      if (prev.length >= MAX_SAVED_COMPARISON_TRENDS) {
+        return prev;
+      }
+      return [
+        ...prev,
+        {
+          tag_id: speedTagId,
+          label: speed.label || 'Machine Speed',
+          section_key: 'Machine',
+          current_value: speed.current_value
+        }
+      ];
+    });
+  }, [summaryQuery.data?.speed]);
+
   const handleRemoveSavedVariable = useCallback((tagId: number) => {
     setSavedVariables((prev) => prev.filter((item) => item.tag_id !== tagId));
   }, []);
@@ -196,6 +219,8 @@ function DashboardPage({ machineId, refreshSeconds, assistantEnabled, theme }: D
               refreshMs={refreshMs}
               theme={theme}
               savedVariables={savedVariables}
+              speedMetric={summaryQuery.data?.speed}
+              onToggleSpeedVariable={handleToggleSpeedVariable}
               onRemoveSavedVariable={handleRemoveSavedVariable}
               onClearSavedVariables={handleClearSavedVariables}
             />

@@ -1619,6 +1619,18 @@ p { color: var(--muted); margin-bottom: 0; }
   font-size: 0.94rem;
   color: var(--text-strong);
 }
+.history-chip-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.history-chip-actions .secondary-button.active {
+  border-color: rgba(56, 189, 248, 0.62);
+  background: rgba(56, 189, 248, 0.16);
+  color: var(--text-strong);
+}
 .history-chip-list {
   display: flex;
   flex-wrap: wrap;
