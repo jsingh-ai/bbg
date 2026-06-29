@@ -51,6 +51,25 @@ def evaluate_alerts(machine_id: int) -> dict[str, Any]:
         (machine_id, recipe_id),
     )
 
+    open_alert_rows = pool.fetch_all(
+        """
+        SELECT alert_id, tag_id, is_currently_out_of_range
+        FROM opc_alert_events
+        WHERE machine_id = %s
+          AND recipe_id = %s
+          AND is_acknowledged = 0
+        """,
+        (machine_id, recipe_id),
+    )
+    existing_by_tag = {
+        int(row["tag_id"]): {
+            "alert_id": row["alert_id"],
+            "is_currently_out_of_range": row.get("is_currently_out_of_range"),
+        }
+        for row in open_alert_rows
+        if row.get("tag_id") is not None
+    }
+
     created = 0
     updated = 0
     returned = 0
@@ -61,17 +80,7 @@ def evaluate_alerts(machine_id: int) -> dict[str, Any]:
         out_of_range, alert_type = _limit_state(value, min_value, max_value)
         display_name = row.get("display_name") or row.get("browse_name") or row.get("node_id") or f"Tag {row['tag_id']}"
         tag_id = int(row["tag_id"])
-
-        existing = pool.fetch_one(
-            """
-            SELECT alert_id, is_currently_out_of_range
-            FROM opc_alert_events
-            WHERE machine_id = %s AND recipe_id = %s AND tag_id = %s AND is_acknowledged = 0
-            ORDER BY triggered_at DESC
-            LIMIT 1
-            """,
-            (machine_id, recipe_id, tag_id),
-        )
+        existing = existing_by_tag.get(tag_id)
 
         if out_of_range:
             if existing:
@@ -127,6 +136,7 @@ def evaluate_alerts(machine_id: int) -> dict[str, Any]:
                     (value, existing["alert_id"]),
                 )
                 returned += 1
+                existing["is_currently_out_of_range"] = 0
             elif existing:
                 pool.execute(
                     """

@@ -5,7 +5,11 @@ import { api } from '../api/client';
 import AlertPanel from '../components/AlertPanel';
 import AssistantPanel from '../components/AssistantPanel';
 import DashboardSummary from '../components/DashboardSummary';
-import HistoryChart, { SavedVariablesChart } from '../components/HistoryChart';
+import HistoryChart, {
+  MAX_SAVED_COMPARISON_TRENDS,
+  MAX_SECTION_HISTORY_TRENDS,
+  SavedVariablesChart
+} from '../components/HistoryChart';
 import MachineMap from '../components/MachineMap';
 import RecipeSelector from '../components/RecipeSelector';
 import SectionPanel from '../components/SectionPanel';
@@ -26,6 +30,7 @@ function DashboardPage({ machineId, refreshSeconds, assistantEnabled, theme }: D
   const [savedVariables, setSavedVariables] = useState<SavedHistoryVariable[]>([]);
   const savedHistoryRef = useRef<HTMLDivElement | null>(null);
   const previousSavedCountRef = useRef(0);
+  const isEvaluatingAlertsRef = useRef(false);
   const refreshMs = Math.max(refreshSeconds, 10) * 1000;
 
   const dashboardQuery = useQuery({
@@ -43,15 +48,24 @@ function DashboardPage({ machineId, refreshSeconds, assistantEnabled, theme }: D
     mutationFn: () => api.evaluateAlerts(machineId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['dashboard', machineId] });
-      queryClient.invalidateQueries({ queryKey: ['sections', machineId] });
+    },
+    onSettled: () => {
+      isEvaluatingAlertsRef.current = false;
     }
   });
+  const evaluateAlerts = evaluateMutation.mutate;
+
+  const runAlertEvaluation = useCallback(() => {
+    if (isEvaluatingAlertsRef.current) return;
+    isEvaluatingAlertsRef.current = true;
+    evaluateAlerts();
+  }, [evaluateAlerts]);
 
   useEffect(() => {
-    evaluateMutation.mutate();
-    const handle = window.setInterval(() => evaluateMutation.mutate(), refreshMs);
+    runAlertEvaluation();
+    const handle = window.setInterval(runAlertEvaluation, refreshMs);
     return () => window.clearInterval(handle);
-  }, [machineId, refreshMs]);
+  }, [machineId, refreshMs, runAlertEvaluation]);
 
   useEffect(() => {
     setSelectedSectionKey(null);
@@ -69,9 +83,11 @@ function DashboardPage({ machineId, refreshSeconds, assistantEnabled, theme }: D
     previousSavedCountRef.current = savedVariables.length;
   }, [savedVariables.length]);
 
-  const handleManualRefresh = () => {
-    evaluateMutation.mutate();
-    dashboardQuery.refetch();
+  const handleManualRefresh = async () => {
+    await api.syncMachine(machineId);
+    runAlertEvaluation();
+    summaryQuery.refetch();
+    queryClient.invalidateQueries({ queryKey: ['dashboard', machineId] });
     queryClient.invalidateQueries({ queryKey: ['section-live'] });
   };
 
@@ -86,6 +102,9 @@ function DashboardPage({ machineId, refreshSeconds, assistantEnabled, theme }: D
     if (!(value.is_history_numeric ?? value.is_numeric)) return;
     setSavedVariables((prev) => {
       if (prev.some((item) => item.tag_id === value.tag_id)) {
+        return prev;
+      }
+      if (prev.length >= MAX_SAVED_COMPARISON_TRENDS) {
         return prev;
       }
       return [
@@ -112,6 +131,7 @@ function DashboardPage({ machineId, refreshSeconds, assistantEnabled, theme }: D
   const machine = state?.machine;
   const sections = state?.sections ?? [];
   const alerts = state?.alerts ?? [];
+  const shouldShowSectionHistory = numericValues.length <= MAX_SECTION_HISTORY_TRENDS;
 
   return (
     <div className="page dashboard-page">
@@ -156,14 +176,17 @@ function DashboardPage({ machineId, refreshSeconds, assistantEnabled, theme }: D
               onNumericValuesChange={setNumericValues}
               onSaveVariable={handleSaveVariable}
               savedVariableIds={savedVariables.map((item) => item.tag_id)}
+              savedVariableLimitReached={savedVariables.length >= MAX_SAVED_COMPARISON_TRENDS}
             />
-            <HistoryChart
-              machineId={machineId}
-              sectionKey={selectedSectionKey}
-              numericValues={numericValues}
-              refreshMs={refreshMs}
-              theme={theme}
-            />
+            {shouldShowSectionHistory && (
+              <HistoryChart
+                machineId={machineId}
+                sectionKey={selectedSectionKey}
+                numericValues={numericValues}
+                refreshMs={refreshMs}
+                theme={theme}
+              />
+            )}
           </div>
         )}
         {savedVariables.length > 0 && (

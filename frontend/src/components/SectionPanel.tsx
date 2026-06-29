@@ -4,6 +4,8 @@ import { Eye, EyeOff, Plus } from 'lucide-react';
 import { api } from '../api/client';
 import type { LiveValue } from '../types';
 
+type ValueGroupKey = 'para' | 'state' | 'temperature-control';
+
 interface SectionPanelProps {
   machineId: number;
   sectionKey: string | null;
@@ -11,6 +13,46 @@ interface SectionPanelProps {
   onNumericValuesChange?: (values: LiveValue[]) => void;
   onSaveVariable?: (value: LiveValue) => void;
   savedVariableIds?: number[];
+  savedVariableLimitReached?: boolean;
+}
+
+const VALUE_GROUPS: { key: ValueGroupKey; label: string }[] = [
+  { key: 'para', label: 'Para' },
+  { key: 'state', label: 'State' },
+  { key: 'temperature-control', label: 'Temperature Control' }
+];
+
+function groupForValue(value: LiveValue): ValueGroupKey {
+  const segments = String(value.opc_path || '')
+    .toLowerCase()
+    .split(/[\\/]/)
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+
+  if (segments.some((segment) => segment.includes('temperature control') || segment.includes('temperature_control'))) {
+    return 'temperature-control';
+  }
+  if (segments.some((segment) => segment === 'para' || segment.startsWith('para '))) {
+    return 'para';
+  }
+  if (segments.some((segment) => segment === 'state' || segment.startsWith('state '))) {
+    return 'state';
+  }
+  return 'state';
+}
+
+function groupValues(values: LiveValue[]): Record<ValueGroupKey, LiveValue[]> {
+  return values.reduce<Record<ValueGroupKey, LiveValue[]>>(
+    (groups, value) => {
+      groups[groupForValue(value)].push(value);
+      return groups;
+    },
+    {
+      para: [],
+      state: [],
+      'temperature-control': []
+    }
+  );
 }
 
 function ValueRows({
@@ -19,7 +61,8 @@ function ValueRows({
   visible,
   className,
   onSaveVariable,
-  savedVariableIds = []
+  savedVariableIds = [],
+  savedVariableLimitReached = false
 }: {
   machineId: number;
   values: LiveValue[];
@@ -27,6 +70,7 @@ function ValueRows({
   className?: string;
   onSaveVariable?: (value: LiveValue) => void;
   savedVariableIds?: number[];
+  savedVariableLimitReached?: boolean;
 }) {
   const queryClient = useQueryClient();
   const toggleMutation = useMutation({
@@ -62,9 +106,15 @@ function ValueRows({
                 {Boolean(row.is_history_numeric ?? row.is_numeric) ? (
                   <button
                     className="icon-button"
-                    disabled={savedVariableIds.includes(row.tag_id)}
+                    disabled={savedVariableIds.includes(row.tag_id) || savedVariableLimitReached}
                     onClick={() => onSaveVariable?.(row)}
-                    title={savedVariableIds.includes(row.tag_id) ? 'Variable already saved' : 'Save variable for comparison'}
+                    title={
+                      savedVariableIds.includes(row.tag_id)
+                        ? 'Variable already saved'
+                        : savedVariableLimitReached
+                          ? 'Saved comparison is limited to 25 variables'
+                          : 'Save variable for comparison'
+                    }
                   >
                     <Plus size={16} />
                   </button>
@@ -85,13 +135,55 @@ function ValueRows({
   );
 }
 
+function GroupedValueRows({
+  machineId,
+  values,
+  visible,
+  onSaveVariable,
+  savedVariableIds,
+  savedVariableLimitReached,
+  className
+}: {
+  machineId: number;
+  values: LiveValue[];
+  visible: boolean;
+  onSaveVariable?: (value: LiveValue) => void;
+  savedVariableIds: number[];
+  savedVariableLimitReached: boolean;
+  className?: string;
+}) {
+  const groups = useMemo(() => groupValues(values), [values]);
+
+  return (
+    <div className={className ? `value-groups ${className}` : 'value-groups'}>
+      {VALUE_GROUPS.map((group) => (
+        <details className="value-group" key={group.key} defaultOpen>
+          <summary>
+            <span>{group.label}</span>
+            <strong>{groups[group.key].length}</strong>
+          </summary>
+          <ValueRows
+            machineId={machineId}
+            values={groups[group.key]}
+            visible={visible}
+            onSaveVariable={onSaveVariable}
+            savedVariableIds={savedVariableIds}
+            savedVariableLimitReached={savedVariableLimitReached}
+          />
+        </details>
+      ))}
+    </div>
+  );
+}
+
 function SectionPanel({
   machineId,
   sectionKey,
   refreshMs,
   onNumericValuesChange,
   onSaveVariable,
-  savedVariableIds = []
+  savedVariableIds = [],
+  savedVariableLimitReached = false
 }: SectionPanelProps) {
   const liveQuery = useQuery({
     queryKey: ['section-live', machineId, sectionKey],
@@ -153,13 +245,14 @@ function SectionPanel({
           </div>
           <div className="section-values-column">
             <h3 className="subheading">Shown Variables</h3>
-            <ValueRows
+            <GroupedValueRows
               machineId={machineId}
               values={shown}
               visible
-              className="section-values-scroll"
               onSaveVariable={onSaveVariable}
               savedVariableIds={savedVariableIds}
+              savedVariableLimitReached={savedVariableLimitReached}
+              className="section-values-scroll"
             />
           </div>
         </div>
@@ -167,12 +260,13 @@ function SectionPanel({
 
       <details className="hidden-vars">
         <summary>Hidden Variables ({hidden.length})</summary>
-        <ValueRows
+        <GroupedValueRows
           machineId={machineId}
           values={hidden}
           visible={false}
           onSaveVariable={onSaveVariable}
           savedVariableIds={savedVariableIds}
+          savedVariableLimitReached={savedVariableLimitReached}
         />
       </details>
     </section>

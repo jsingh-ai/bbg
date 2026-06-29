@@ -30,6 +30,7 @@ PRODUCTION_PATHS = {
 }
 
 UPTIME_WINDOW_MINUTES = 24 * 60
+MAX_HISTORY_POINTS_PER_SERIES = 600
 
 
 def _latest_history_by_tag(tag_ids: list[int]) -> dict[int, dict[str, Any]]:
@@ -70,6 +71,11 @@ def _latest_history_by_tag(tag_ids: list[int]) -> dict[int, dict[str, Any]]:
         if current is None or (created_at and current.get("created_at") and created_at > current["created_at"]):
             latest_by_tag[tag_id] = row
     return latest_by_tag
+
+
+def _history_bucket_seconds(start: datetime, end: datetime, max_points: int = MAX_HISTORY_POINTS_PER_SERIES) -> int:
+    range_seconds = max(int((end - start).total_seconds()), 1)
+    return max(1, (range_seconds + max_points - 1) // max_points)
 
 
 def _is_timeout_marker(value: Any) -> bool:
@@ -172,24 +178,34 @@ def get_dashboard_summary(machine_id: int, minutes: int | None = None) -> dict[s
     tag_by_path = {normalize_key(str(row.get("opc_path") or "")): row for row in tag_rows}
     tag_ids = [int(row["tag_id"]) for row in tag_rows if row.get("tag_id") is not None]
     history_by_tag: dict[int, list[list[Any]]] = defaultdict(list)
-    latest_history = _latest_history_by_tag(tag_ids)
+    fallback_tag_ids = [
+        int(row["tag_id"])
+        for row in tag_rows
+        if row.get("tag_id") is not None and _should_use_history_fallback(row)
+    ]
+    latest_history = _latest_history_by_tag(fallback_tag_ids)
 
     if tag_ids:
         history_placeholders = ",".join(["%s"] * len(tag_ids))
+        bucket_seconds = _history_bucket_seconds(start, datetime.now())
         history_rows = pool.fetch_all(
             f"""
-            SELECT created_at, tag_id, value_num
+            SELECT
+                FROM_UNIXTIME(FLOOR(UNIX_TIMESTAMP(created_at) / %s) * %s) AS bucket_time,
+                tag_id,
+                AVG(value_num) AS value_num
             FROM opc_tag_values
             WHERE tag_id IN ({history_placeholders})
               AND created_at >= %s
               AND value_kind = 1
               AND value_num IS NOT NULL
-            ORDER BY created_at, tag_id
+            GROUP BY tag_id, bucket_time
+            ORDER BY bucket_time, tag_id
             """,
-            tuple([*tag_ids, start]),
+            tuple([bucket_seconds, bucket_seconds, *tag_ids, start]),
         )
         for row in history_rows:
-            captured = row.get("created_at")
+            captured = row.get("bucket_time")
             timestamp = captured.isoformat() if hasattr(captured, "isoformat") else str(captured)
             history_by_tag[int(row["tag_id"])].append([timestamp, row.get("value_num")])
 
@@ -220,25 +236,27 @@ def get_dashboard_summary(machine_id: int, minutes: int | None = None) -> dict[s
         uptime_start = datetime.now() - timedelta(minutes=UPTIME_WINDOW_MINUTES)
         uptime_rows = pool.fetch_all(
             """
-            SELECT created_at, value_num
+            SELECT
+                DATE_FORMAT(created_at, '%%Y-%%m-%%d %%H:%%i') AS minute_key,
+                MAX(value_num) AS value_num
             FROM opc_tag_values
             WHERE tag_id = %s
               AND created_at >= %s
               AND value_kind = 1
               AND value_num IS NOT NULL
-            ORDER BY created_at
+            GROUP BY DATE_FORMAT(created_at, '%%Y-%%m-%%d %%H:%%i')
+            ORDER BY minute_key
             """,
             (speed_tag_id, uptime_start),
         )
 
         latest_by_minute: dict[str, float] = {}
         for row in uptime_rows:
-            created_at = row.get("created_at")
+            created_at = row.get("minute_key")
             value_num = row.get("value_num")
             if created_at is None or value_num is None:
                 continue
-            minute_key = created_at.strftime("%Y-%m-%d %H:%M")
-            latest_by_minute[minute_key] = float(value_num)
+            latest_by_minute[str(created_at)] = float(value_num)
 
         online_minutes = sum(1 for value in latest_by_minute.values() if value != 0)
         offline_minutes = sum(1 for value in latest_by_minute.values() if value == 0)
@@ -318,10 +336,16 @@ def set_active_recipe(machine_id: int, recipe_id: int | None, selection_mode: st
     return get_active_recipe(machine_id)
 
 
-def get_sections(machine_id: int, include_hidden: bool = True, sync: bool = False) -> list[dict[str, Any]]:
+def get_sections(
+    machine_id: int,
+    include_hidden: bool = True,
+    sync: bool = False,
+    active_recipe: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
     if sync:
         sync_machine(machine_id)
-    active_recipe = get_active_recipe(machine_id)
+    if active_recipe is None:
+        active_recipe = get_active_recipe(machine_id)
     recipe_id = active_recipe.get("recipe_id") if active_recipe else None
 
     params: list[Any] = [machine_id]
@@ -507,9 +531,12 @@ def get_section_live_values(machine_id: int, section_key: str, include_hidden: b
         sync_machine(machine_id)
         rows = fetch_rows()
 
-    latest_history = _latest_history_by_tag(
-        [int(row["tag_id"]) for row in rows if row.get("tag_id") is not None]
-    )
+    fallback_tag_ids = [
+        int(row["tag_id"])
+        for row in rows
+        if row.get("tag_id") is not None and _should_use_history_fallback(row)
+    ]
+    latest_history = _latest_history_by_tag(fallback_tag_ids)
     items: list[dict[str, Any]] = []
     for row in rows:
         item = row_json_safe(row)
@@ -576,19 +603,43 @@ def get_history(machine_id: int, section_key: str | None, start: datetime, end: 
     if section_key:
         section_filter = "AND cfg.section_key = %s"
         params.append(section_key)
-    params.extend([start, end, *tag_ids])
+    metadata_params = [*params, *tag_ids]
+    bucket_seconds = _history_bucket_seconds(start, end)
+    history_params: list[Any] = [bucket_seconds, bucket_seconds, machine_id]
+    if section_key:
+        history_params.append(section_key)
+    history_params.extend([start, end, *tag_ids])
+
+    metadata_rows = pool.fetch_all(
+        f"""
+        SELECT
+            t.tag_id,
+            cfg.section_key,
+            t.display_name,
+            t.browse_name,
+            t.node_id
+        FROM opc_tags t
+        JOIN opc_tag_display_config cfg ON cfg.tag_id = t.tag_id AND cfg.machine_id = t.machine_id
+        WHERE t.machine_id = %s
+          {section_filter}
+          AND t.tag_id IN ({placeholders})
+        """,
+        tuple(metadata_params),
+    )
+    labels = {int(row["tag_id"]): display_name(row) for row in metadata_rows if row.get("tag_id") is not None}
+    sections = {
+        int(row["tag_id"]): str(row.get("section_key") or "")
+        for row in metadata_rows
+        if row.get("tag_id") is not None
+    }
 
     def fetch_rows() -> list[dict[str, Any]]:
         return pool.fetch_all(
             f"""
             SELECT
-                v.created_at,
                 v.tag_id,
-                v.value_num,
-                cfg.section_key,
-                t.display_name,
-                t.browse_name,
-                t.node_id
+                FROM_UNIXTIME(FLOOR(UNIX_TIMESTAMP(v.created_at) / %s) * %s) AS bucket_time,
+                AVG(v.value_num) AS value_num
             FROM opc_tag_values v
             JOIN opc_tags t ON t.tag_id = v.tag_id
             JOIN opc_tag_display_config cfg ON cfg.tag_id = t.tag_id AND cfg.machine_id = t.machine_id
@@ -599,24 +650,18 @@ def get_history(machine_id: int, section_key: str | None, start: datetime, end: 
               AND v.tag_id IN ({placeholders})
               AND v.value_kind = 1
               AND v.value_num IS NOT NULL
-            ORDER BY v.created_at, v.tag_id
+            GROUP BY v.tag_id, bucket_time
+            ORDER BY bucket_time, v.tag_id
             """,
-            tuple(params),
+            tuple(history_params),
         )
 
     rows = fetch_rows()
-    if not rows:
-        sync_machine(machine_id)
-        rows = fetch_rows()
 
-    labels: dict[int, str] = {}
-    sections: dict[int, str] = {}
     points_by_tag: dict[int, list[list[Any]]] = defaultdict(list)
     for row in rows:
         tag_id = int(row["tag_id"])
-        labels[tag_id] = display_name(row)
-        sections[tag_id] = str(row.get("section_key") or "")
-        captured = row.get("created_at")
+        captured = row.get("bucket_time")
         timestamp = captured.isoformat() if hasattr(captured, "isoformat") else str(captured)
         points_by_tag[tag_id].append([timestamp, row.get("value_num")])
 
@@ -629,7 +674,12 @@ def get_history(machine_id: int, section_key: str | None, start: datetime, end: 
         }
         for tag_id in tag_ids
     ]
-    return {"series": series, "start": start.isoformat(), "end": end.isoformat()}
+    return {
+        "series": series,
+        "start": start.isoformat(),
+        "end": end.isoformat(),
+        "bucket_seconds": bucket_seconds,
+    }
 
 
 def default_history_range() -> tuple[datetime, datetime]:

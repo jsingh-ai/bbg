@@ -6,6 +6,9 @@ import { api } from '../api/client';
 import { readThemeColor, type ThemeMode } from '../hooks/useTheme';
 import type { LiveValue, SavedHistoryVariable } from '../types';
 
+export const MAX_SECTION_HISTORY_TRENDS = 15;
+export const MAX_SAVED_COMPARISON_TRENDS = 25;
+
 const CHART_COLORS = ['#38bdf8', '#22c55e', '#f59e0b', '#f97316', '#ef4444', '#a78bfa', '#14b8a6', '#f43f5e'];
 
 interface SectionHistoryChartProps {
@@ -191,13 +194,15 @@ function useChart(
 
 function HistoryChart({ machineId, sectionKey, numericValues, refreshMs, theme }: SectionHistoryChartProps) {
   const mainChartRef = useRef<HTMLDivElement | null>(null);
-  const { range, setRange } = useAutoUpdatingRange(Boolean(sectionKey), refreshMs);
   const tagIds = useMemo(() => numericValues.map((row) => row.tag_id).sort((a, b) => a - b), [numericValues]);
+  const exceedsTrendLimit = tagIds.length > MAX_SECTION_HISTORY_TRENDS;
+  const historyEnabled = Boolean(sectionKey && tagIds.length && !exceedsTrendLimit);
+  const { range, setRange } = useAutoUpdatingRange(historyEnabled, refreshMs);
 
   const mainHistoryQuery = useQuery({
     queryKey: ['history', 'main', machineId, sectionKey, range.start, range.end, tagIds.join(',')],
     queryFn: () => api.getHistory(machineId, inputToQueryDateTime(range.start), inputToQueryDateTime(range.end), tagIds, sectionKey),
-    enabled: Boolean(sectionKey && tagIds.length),
+    enabled: historyEnabled,
     staleTime: 10_000
   });
 
@@ -212,7 +217,7 @@ function HistoryChart({ machineId, sectionKey, numericValues, refreshMs, theme }
 
   const hasMainSeriesData = useMemo(() => mainSeries.some((series) => series.points.length > 0), [mainSeries]);
 
-  useChart(mainChartRef, mainHistoryQuery.isFetching, Boolean(tagIds.length), mainSeries, theme);
+  useChart(mainChartRef, mainHistoryQuery.isFetching, historyEnabled, mainSeries, theme);
 
   if (!sectionKey) {
     return (
@@ -270,13 +275,15 @@ export function SavedVariablesChart({
   onClearSavedVariables
 }: SavedVariablesChartProps) {
   const compareChartRef = useRef<HTMLDivElement | null>(null);
-  const { range, setRange } = useAutoUpdatingRange(true, refreshMs);
   const savedTagIds = useMemo(() => savedVariables.map((item) => item.tag_id).sort((a, b) => a - b), [savedVariables]);
+  const exceedsTrendLimit = savedTagIds.length > MAX_SAVED_COMPARISON_TRENDS;
+  const historyEnabled = Boolean(savedTagIds.length && !exceedsTrendLimit);
+  const { range, setRange } = useAutoUpdatingRange(historyEnabled, refreshMs);
 
   const compareHistoryQuery = useQuery({
     queryKey: ['history', 'compare', machineId, range.start, range.end, savedTagIds.join(',')],
     queryFn: () => api.getHistory(machineId, inputToQueryDateTime(range.start), inputToQueryDateTime(range.end), savedTagIds),
-    enabled: Boolean(savedTagIds.length),
+    enabled: historyEnabled,
     staleTime: 10_000
   });
 
@@ -294,7 +301,7 @@ export function SavedVariablesChart({
 
   const hasCompareSeriesData = useMemo(() => compareSeries.some((series) => series.points.length > 0), [compareSeries]);
 
-  useChart(compareChartRef, compareHistoryQuery.isFetching, Boolean(savedVariables.length), compareSeries, theme, 'Saved comparison');
+  useChart(compareChartRef, compareHistoryQuery.isFetching, historyEnabled, compareSeries, theme, 'Saved comparison');
 
   return (
     <section className="history-panel history-saved-panel panel-fill">
@@ -342,6 +349,11 @@ export function SavedVariablesChart({
           <div className="compare-layout">
             <div className="chart-stage compare-chart-stage">
               {compareHistoryQuery.isError && <div className="chart-message">{(compareHistoryQuery.error as Error).message}</div>}
+              {exceedsTrendLimit && (
+                <div className="chart-message">
+                  Saved comparison has {savedTagIds.length} variables. Remove variables until 25 or fewer are saved to load historical trends.
+                </div>
+              )}
               {!compareHistoryQuery.isError && compareHistoryQuery.data && !hasCompareSeriesData && (
                 <div className="chart-message">No history data found for the saved comparison variables.</div>
               )}
