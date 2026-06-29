@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Eye, EyeOff, Plus } from 'lucide-react';
 import { api } from '../api/client';
 import type { LiveValue } from '../types';
@@ -29,7 +29,13 @@ function groupForValue(value: LiveValue): ValueGroupKey {
     .map((segment) => segment.trim())
     .filter(Boolean);
 
-  if (segments.some((segment) => segment.includes('temperature control') || segment.includes('temperature_control'))) {
+  if (
+    segments.some((segment) =>
+      segment.includes('temperature control') ||
+      segment.includes('temperature_control') ||
+      segment.includes('temperature-control')
+    )
+  ) {
     return 'temperature-control';
   }
   if (segments.some((segment) => segment === 'para' || segment.startsWith('para '))) {
@@ -153,12 +159,26 @@ function GroupedValueRows({
   className?: string;
 }) {
   const groups = useMemo(() => groupValues(values), [values]);
+  const [openGroups, setOpenGroups] = useState<Record<ValueGroupKey, boolean>>({
+    para: true,
+    state: true,
+    'temperature-control': true
+  });
 
   return (
     <div className={className ? `value-groups ${className}` : 'value-groups'}>
       {VALUE_GROUPS.map((group) => (
-        <details className="value-group" key={group.key} defaultOpen>
-          <summary>
+        <details
+          className="value-group"
+          key={group.key}
+          open={openGroups[group.key]}
+        >
+          <summary
+            onClick={(event) => {
+              event.preventDefault();
+              setOpenGroups((current) => ({ ...current, [group.key]: !current[group.key] }));
+            }}
+          >
             <span>{group.label}</span>
             <strong>{groups[group.key].length}</strong>
           </summary>
