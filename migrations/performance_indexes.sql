@@ -20,25 +20,6 @@ PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
 
--- Numeric history queries use equality filters for tag_id and value_kind,
--- followed by a created_at range. value_num makes this a covering index so
--- MySQL can aggregate chart data without reading the full table rows.
-SET @index_exists = (
-    SELECT COUNT(*)
-    FROM information_schema.statistics
-    WHERE table_schema = @schema_name
-      AND table_name = 'opc_tag_values'
-      AND index_name = 'idx_opc_tag_values_numeric_history'
-);
-SET @sql = IF(
-    @index_exists = 0,
-    'CREATE INDEX idx_opc_tag_values_numeric_history ON opc_tag_values (tag_id, value_kind, created_at, value_num)',
-    'SELECT ''idx_opc_tag_values_numeric_history already exists'' AS message'
-);
-PREPARE stmt FROM @sql;
-EXECUTE stmt;
-DEALLOCATE PREPARE stmt;
-
 SET @index_exists = (
     SELECT COUNT(*)
     FROM information_schema.statistics

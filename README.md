@@ -663,11 +663,11 @@ The migration checks `information_schema` and creates only missing indexes. The
 application now keeps live values available and shows a warning when a history
 query times out instead of returning a failed HTTP request.
 
-The migration also creates the covering numeric-history index
-`idx_opc_tag_values_numeric_history` on `(tag_id, value_kind, created_at,
-value_num)`. Chart queries validate tag metadata first and then scan only the
-history table through the requested tag/time range. Longer ranges automatically
-use wider time buckets so each variable returns roughly 600 points or fewer.
+The covering history index `idx_opc_tag_values_dashboard` uses `(tag_id,
+created_at, value_kind, value_num)`. Chart queries validate tag metadata first
+and then scan only the history table through the requested tag/time range.
+Longer ranges automatically use wider time buckets so each variable returns
+roughly 600 points or fewer.
 
 ## Alerts are not being created
 

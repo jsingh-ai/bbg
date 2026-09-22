@@ -126,6 +126,7 @@ export interface SummaryMetric {
   tag_id?: number;
   opc_path: string;
   node_id?: string;
+  browse_name?: string | null;
   label: string;
   current_value: string;
   value_num?: number | null;

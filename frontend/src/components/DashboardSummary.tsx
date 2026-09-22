@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import * as echarts from 'echarts';
-import { Maximize2, X } from 'lucide-react';
+import { Info, Maximize2, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import { api } from '../api/client';
 import { readThemeColor, type ThemeMode } from '../hooks/useTheme';
@@ -254,6 +254,48 @@ function formatPercent(value?: number) {
   return typeof value === 'number' && Number.isFinite(value) ? `${value.toFixed(1)}%` : '--';
 }
 
+function MetricSourceInfo({
+  metric,
+  compact = false,
+  note
+}: {
+  metric?: SummaryMetric;
+  compact?: boolean;
+  note?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const displayName = metric?.label || 'Not available';
+  const variableName = metric?.browse_name || 'Not available';
+  const opcPath = metric?.opc_path || 'Not available';
+  const nodeId = metric?.node_id || 'Not available';
+  const hoverText = `Display: ${displayName}\nPLC variable: ${variableName}\nNode ID: ${nodeId}`;
+
+  return (
+    <div className={open ? 'summary-source-info open' : 'summary-source-info'}>
+      <button
+        type="button"
+        className={compact ? 'summary-source-trigger compact' : 'summary-source-trigger'}
+        aria-expanded={open}
+        aria-label={`Show PLC source for ${displayName}`}
+        title={hoverText}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <Info size={14} />
+        {!compact && <span>PLC Source</span>}
+      </button>
+      <div className="summary-source-popover" role="note">
+        {note && <p>{note}</p>}
+        <dl>
+          <div><dt>Display name</dt><dd>{displayName}</dd></div>
+          <div><dt>PLC variable</dt><dd>{variableName}</dd></div>
+          <div><dt>OPC path</dt><dd><code>{opcPath}</code></dd></div>
+          <div><dt>Node ID</dt><dd><code>{nodeId}</code></dd></div>
+        </dl>
+      </div>
+    </div>
+  );
+}
+
 function ExpandedTrendModal({
   open,
   title,
@@ -441,11 +483,17 @@ function DashboardSummary({ machineId, summary, theme }: DashboardSummaryProps) 
             <div className="summary-production-layout">
               <div className="summary-production-values">
                 <div className="summary-production-pill good">
-                  <span>Good</span>
+                  <div className="summary-production-pill-heading">
+                    <span>Good</span>
+                    <MetricSourceInfo metric={production?.good} compact />
+                  </div>
                   <strong>{metricValue(production?.good)}</strong>
                 </div>
                 <div className="summary-production-pill bad">
-                  <span>Bad</span>
+                  <div className="summary-production-pill-heading">
+                    <span>Bad</span>
+                    <MetricSourceInfo metric={production?.bad} compact />
+                  </div>
                   <strong>{metricValue(production?.bad)}</strong>
                 </div>
               </div>
@@ -471,9 +519,12 @@ function DashboardSummary({ machineId, summary, theme }: DashboardSummaryProps) 
               <h2 className="panel-title">Speed</h2>
               <small className="summary-trend-label panel-subtitle">Last Hour Trend</small>
             </div>
-            <button className="secondary-button small-button" onClick={() => setExpandedMetric('speed')}>
-              <Maximize2 size={14} /> Expand
-            </button>
+            <div className="summary-card-actions panel-actions">
+              <MetricSourceInfo metric={summary?.speed} />
+              <button className="secondary-button small-button" onClick={() => setExpandedMetric('speed')}>
+                <Maximize2 size={14} /> Expand
+              </button>
+            </div>
           </div>
           <div className="panel-body summary-card-body">
             <div className="summary-speed-layout">
@@ -505,6 +556,12 @@ function DashboardSummary({ machineId, summary, theme }: DashboardSummaryProps) 
               <span className="summary-kicker panel-eyebrow">Availability</span>
               <h2 className="panel-title">Uptime</h2>
               <small className="summary-trend-label panel-subtitle">Last 24 Hr</small>
+            </div>
+            <div className="summary-card-actions panel-actions">
+              <MetricSourceInfo
+                metric={summary?.speed}
+                note="Uptime is calculated from the machine-speed history: non-zero speed is online and zero speed is offline."
+              />
             </div>
           </div>
           <div className="panel-body summary-card-body">

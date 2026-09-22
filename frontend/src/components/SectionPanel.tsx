@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo } from 'react';
 import { Eye, EyeOff, Plus } from 'lucide-react';
 import { api } from '../api/client';
 import type { LiveValue } from '../types';
@@ -16,10 +16,14 @@ interface SectionPanelProps {
   savedVariableLimitReached?: boolean;
 }
 
-const VALUE_GROUPS: { key: ValueGroupKey; label: string }[] = [
-  { key: 'para', label: 'Para' },
-  { key: 'state', label: 'State' },
-  { key: 'temperature-control', label: 'Temperature Control' }
+const VALUE_GROUPS: { key: ValueGroupKey; label: string; description: string }[] = [
+  { key: 'para', label: 'Para', description: 'PLC setpoints and configured target values.' },
+  { key: 'state', label: 'State', description: 'Live process feedback and actual machine values.' },
+  {
+    key: 'temperature-control',
+    label: 'Temperature Control',
+    description: 'Temperature setpoints, feedback, and controller values.'
+  }
 ];
 
 function groupForValue(value: LiveValue): ValueGroupKey {
@@ -145,8 +149,8 @@ function ValueRows({
 
 function ValueGroup({
   label,
+  description,
   values,
-  initiallyOpen,
   machineId,
   visible,
   onSaveVariable,
@@ -154,28 +158,23 @@ function ValueGroup({
   savedVariableLimitReached
 }: {
   label: string;
+  description: string;
   values: LiveValue[];
-  initiallyOpen: boolean;
   machineId: number;
   visible: boolean;
   onSaveVariable?: (value: LiveValue) => void;
   savedVariableIds: number[];
   savedVariableLimitReached: boolean;
 }) {
-  const detailsRef = useRef<HTMLDetailsElement | null>(null);
-
-  useEffect(() => {
-    if (detailsRef.current) {
-      detailsRef.current.open = initiallyOpen;
-    }
-  }, [initiallyOpen]);
-
   return (
-    <details className="value-group" ref={detailsRef}>
-      <summary>
-        <span>{label}</span>
+    <section className="value-group">
+      <div className="value-group-header">
+        <div className="value-group-title">
+          <span>{label}</span>
+          <small>{description}</small>
+        </div>
         <strong>{values.length}</strong>
-      </summary>
+      </div>
       <ValueRows
         machineId={machineId}
         values={values}
@@ -184,7 +183,7 @@ function ValueGroup({
         savedVariableIds={savedVariableIds}
         savedVariableLimitReached={savedVariableLimitReached}
       />
-    </details>
+    </section>
   );
 }
 
@@ -209,12 +208,12 @@ function GroupedValueRows({
 
   return (
     <div className={className ? `value-groups ${className}` : 'value-groups'}>
-      {VALUE_GROUPS.map((group) => (
+      {VALUE_GROUPS.filter((group) => groups[group.key].length > 0).map((group) => (
         <ValueGroup
           key={group.key}
           label={group.label}
+          description={group.description}
           values={groups[group.key]}
-          initiallyOpen={group.key === 'para'}
           machineId={machineId}
           visible={visible}
           onSaveVariable={onSaveVariable}
