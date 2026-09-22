@@ -361,7 +361,7 @@ If the main image does not show, confirm:
 
 Click **Machine Layout** in the sidebar.
 
-The app will auto-sync sections from `opc_tags.opc_path`.
+Press **Sync Sections** to import current sections from `opc_tags.opc_path`.
 
 For each active tag, it parses the section from paths like:
 
@@ -646,6 +646,22 @@ WHERE t.machine_id = 1
   AND v.value_kind = 1
   AND v.value_num IS NOT NULL;
 ```
+
+## Dashboard summary logs `Lost connection ... during query (timed out)`
+
+The summary and uptime cards query recent rows from `opc_tag_values`. On a large
+collector database, MySQL needs a composite tag/time index to avoid scanning the
+full history table.
+
+Open this file in MySQL Workbench and run it once during a maintenance window:
+
+```bat
+migrations\performance_indexes.sql
+```
+
+The migration checks `information_schema` and creates only missing indexes. The
+application now keeps live values available and shows a warning when a history
+query times out instead of returning a failed HTTP request.
 
 ## Alerts are not being created
 

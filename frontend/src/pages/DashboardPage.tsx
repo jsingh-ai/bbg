@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { RefreshCcw } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
@@ -30,7 +30,6 @@ function DashboardPage({ machineId, refreshSeconds, assistantEnabled, theme }: D
   const [savedVariables, setSavedVariables] = useState<SavedHistoryVariable[]>([]);
   const savedHistoryRef = useRef<HTMLDivElement | null>(null);
   const previousSavedCountRef = useRef(0);
-  const isEvaluatingAlertsRef = useRef(false);
   const refreshMs = Math.max(refreshSeconds, 10) * 1000;
 
   const dashboardQuery = useQuery({
@@ -43,29 +42,6 @@ function DashboardPage({ machineId, refreshSeconds, assistantEnabled, theme }: D
     queryFn: () => api.getSummary(machineId),
     refetchInterval: refreshMs
   });
-
-  const evaluateMutation = useMutation({
-    mutationFn: () => api.evaluateAlerts(machineId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['dashboard', machineId] });
-    },
-    onSettled: () => {
-      isEvaluatingAlertsRef.current = false;
-    }
-  });
-  const evaluateAlerts = evaluateMutation.mutate;
-
-  const runAlertEvaluation = useCallback(() => {
-    if (isEvaluatingAlertsRef.current) return;
-    isEvaluatingAlertsRef.current = true;
-    evaluateAlerts();
-  }, [evaluateAlerts]);
-
-  useEffect(() => {
-    runAlertEvaluation();
-    const handle = window.setInterval(runAlertEvaluation, refreshMs);
-    return () => window.clearInterval(handle);
-  }, [machineId, refreshMs, runAlertEvaluation]);
 
   useEffect(() => {
     setSelectedSectionKey(null);
@@ -85,7 +61,7 @@ function DashboardPage({ machineId, refreshSeconds, assistantEnabled, theme }: D
 
   const handleManualRefresh = async () => {
     await api.syncMachine(machineId);
-    runAlertEvaluation();
+    await api.evaluateAlerts(machineId);
     summaryQuery.refetch();
     queryClient.invalidateQueries({ queryKey: ['dashboard', machineId] });
     queryClient.invalidateQueries({ queryKey: ['section-live'] });
@@ -174,6 +150,9 @@ function DashboardPage({ machineId, refreshSeconds, assistantEnabled, theme }: D
       {(dashboardQuery.isError || summaryQuery.isError) && (
         <div className="error-banner">{((dashboardQuery.error || summaryQuery.error) as Error).message}</div>
       )}
+      {summaryQuery.data?.warnings?.map((warning) => (
+        <div className="error-banner" key={warning}>{warning}</div>
+      ))}
 
       <div className="dashboard-grid">
         <div className="dashboard-summary-row">

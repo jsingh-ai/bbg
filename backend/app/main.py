@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import asyncio
+import logging
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -8,11 +11,48 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .config import FRONTEND_DIST, STATIC_ROOT, get_settings
+from .db import pool
 from .routes import alerts, assistant, dashboard, machines, recipes
+from .services.alert_service import evaluate_alerts
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
-app = FastAPI(title=settings.app_name, version="1.0.0")
+
+async def _alert_evaluator_loop() -> None:
+    interval = max(settings.alert_evaluation_seconds, 10)
+    while True:
+        try:
+            machine_rows = await asyncio.to_thread(
+                pool.fetch_all,
+                "SELECT machine_id FROM opc_machines WHERE is_active = 1 ORDER BY machine_id",
+            )
+            for row in machine_rows:
+                machine_id = int(row["machine_id"])
+                try:
+                    await asyncio.to_thread(evaluate_alerts, machine_id)
+                except Exception:
+                    logger.exception("Background alert evaluation failed for machine %s", machine_id)
+        except Exception:
+            logger.exception("Background alert evaluator could not load active machines")
+        await asyncio.sleep(interval)
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    evaluator_task: asyncio.Task | None = None
+    if settings.alert_evaluation_seconds > 0:
+        evaluator_task = asyncio.create_task(_alert_evaluator_loop())
+    try:
+        yield
+    finally:
+        if evaluator_task:
+            evaluator_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await evaluator_task
+
+
+app = FastAPI(title=settings.app_name, version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -45,7 +85,7 @@ if FRONTEND_DIST.exists():
     @app.get("/{full_path:path}")
     def serve_frontend(full_path: str) -> FileResponse:
         requested = (FRONTEND_DIST / full_path).resolve()
-        if requested.is_file() and str(requested).startswith(str(FRONTEND_DIST.resolve())):
+        if requested.is_file() and requested.is_relative_to(FRONTEND_DIST.resolve()):
             return FileResponse(str(requested))
         return FileResponse(str(FRONTEND_DIST / "index.html"))
 else:

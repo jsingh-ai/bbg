@@ -510,21 +510,21 @@ function DashboardSummary({ machineId, summary, theme }: DashboardSummaryProps) 
           <div className="panel-body summary-card-body">
             <div className="summary-uptime-layout">
               <div className="summary-uptime-kpi">
-                <span className="summary-uptime-pct">{formatPercent(uptime?.uptime_pct)}</span>
+                <span className="summary-uptime-pct">{uptime?.available === false ? '--' : formatPercent(uptime?.uptime_pct)}</span>
                 <span className="summary-uptime-caption">Machine uptime</span>
               </div>
               <div className="summary-uptime-breakdown">
                 <div className="summary-uptime-row online">
                   <span>Online</span>
-                  <strong>{uptime?.online_minutes ?? 0} min</strong>
+                  <strong>{uptime?.available === false ? '--' : `${uptime?.online_minutes ?? 0} min`}</strong>
                 </div>
                 <div className="summary-uptime-row offline">
                   <span>Offline</span>
-                  <strong>{uptime?.offline_minutes ?? 0} min</strong>
+                  <strong>{uptime?.available === false ? '--' : `${uptime?.offline_minutes ?? 0} min`}</strong>
                 </div>
                 <div className="summary-uptime-row down">
                   <span>Down</span>
-                  <strong>{uptime?.down_minutes ?? 0} min</strong>
+                  <strong>{uptime?.available === false ? '--' : `${uptime?.down_minutes ?? 0} min`}</strong>
                 </div>
               </div>
             </div>

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from fastapi import APIRouter
+from typing import Annotated
+
+from fastapi import APIRouter, Query
 
 from ..schemas import AssistantChatRequest, AssistantConversationClearRequest
 from ..services.assistant_service import (
@@ -31,7 +33,10 @@ def assistant_production_debug(time_range: str = "today") -> dict:
 
 
 @router.get("/production-candidates")
-def assistant_production_candidates(time_range: str = "today", limit: int = 50) -> dict:
+def assistant_production_candidates(
+    time_range: str = "today",
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+) -> dict:
     return get_production_candidates_response(time_range, limit)
 
 

@@ -6,7 +6,6 @@ from fastapi import HTTPException
 
 from ..db import pool
 from .section_parser import display_name, is_numeric_data_type
-from .sync_service import sync_machine
 from .value_format import formatted_value, row_json_safe, rows_json_safe
 
 
@@ -68,7 +67,6 @@ def update_recipe(recipe_id: int, data: dict[str, Any]) -> dict[str, Any]:
 def get_recipe_limits_for_section(recipe_id: int, section_key: str) -> dict[str, Any]:
     recipe = get_recipe(recipe_id)
     machine_id = int(recipe["machine_id"])
-    sync_machine(machine_id)
     rows = pool.fetch_all(
         """
         SELECT

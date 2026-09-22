@@ -12,6 +12,7 @@ type PageKey = 'dashboard' | 'layout' | 'recipes' | 'alerts';
 
 const navItems: { key: PageKey; label: string; icon: ReactNode }[] = [
   { key: 'dashboard', label: 'Live Dashboard', icon: <LayoutDashboard size={19} /> },
+  { key: 'layout', label: 'Machine Layout', icon: <Blocks size={19} /> },
   { key: 'recipes', label: 'Recipes', icon: <ChefHat size={19} /> },
   { key: 'alerts', label: 'Alert History', icon: <Bell size={19} /> }
 ];

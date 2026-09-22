@@ -1,12 +1,24 @@
 from __future__ import annotations
 
+import threading
+from datetime import datetime, timedelta
 from typing import Any
 
 from fastapi import HTTPException
 
+from ..config import get_settings
 from ..db import pool
 from .dashboard_service import get_active_recipe
 from .value_format import row_json_safe, rows_json_safe
+
+
+_evaluation_locks: dict[int, threading.Lock] = {}
+_evaluation_locks_guard = threading.Lock()
+
+
+def _evaluation_lock(machine_id: int) -> threading.Lock:
+    with _evaluation_locks_guard:
+        return _evaluation_locks.setdefault(machine_id, threading.Lock())
 
 
 def _limit_state(value: float, min_value: float | None, max_value: float | None) -> tuple[bool, str | None]:
@@ -18,6 +30,22 @@ def _limit_state(value: float, min_value: float | None, max_value: float | None)
 
 
 def evaluate_alerts(machine_id: int) -> dict[str, Any]:
+    lock = _evaluation_lock(machine_id)
+    if not lock.acquire(blocking=False):
+        return {
+            "evaluated": False,
+            "reason": "Alert evaluation is already running for this machine",
+            "created": 0,
+            "updated": 0,
+            "returned": 0,
+        }
+    try:
+        return _evaluate_alerts_locked(machine_id)
+    finally:
+        lock.release()
+
+
+def _evaluate_alerts_locked(machine_id: int) -> dict[str, Any]:
     active = get_active_recipe(machine_id)
     recipe_id = active.get("recipe_id") if active else None
     if not recipe_id:
@@ -37,16 +65,17 @@ def evaluate_alerts(machine_id: int) -> dict[str, Any]:
             t.browse_name,
             t.node_id,
             l.captured_at,
+            l.is_good,
+            l.error_text,
+            l.value_kind,
             l.value_num
         FROM opc_recipe_limits lim
         JOIN opc_tags t ON t.tag_id = lim.tag_id
-        JOIN opc_tag_latest l ON l.tag_id = lim.tag_id
+        LEFT JOIN opc_tag_latest l ON l.tag_id = lim.tag_id
         WHERE lim.machine_id = %s
           AND lim.recipe_id = %s
           AND lim.is_enabled = 1
           AND (lim.min_value IS NOT NULL OR lim.max_value IS NOT NULL)
-          AND l.value_kind = 1
-          AND l.value_num IS NOT NULL
         """,
         (machine_id, recipe_id),
     )
@@ -73,7 +102,21 @@ def evaluate_alerts(machine_id: int) -> dict[str, Any]:
     created = 0
     updated = 0
     returned = 0
+    skipped_stale_or_bad = 0
+    active_limit_tag_ids = {int(row["tag_id"]) for row in rows if row.get("tag_id") is not None}
+    stale_cutoff = datetime.now() - timedelta(seconds=max(get_settings().alert_max_data_age_seconds, 1))
     for row in rows:
+        captured_at = row.get("captured_at")
+        if (
+            row.get("value_kind") != 1
+            or row.get("value_num") is None
+            or not bool(row.get("is_good"))
+            or bool(row.get("error_text"))
+            or captured_at is None
+            or captured_at < stale_cutoff
+        ):
+            skipped_stale_or_bad += 1
+            continue
         value = float(row["value_num"])
         min_value = row.get("min_value")
         max_value = row.get("max_value")
@@ -89,12 +132,24 @@ def evaluate_alerts(machine_id: int) -> dict[str, Any]:
                     UPDATE opc_alert_events
                     SET alert_type = %s,
                         current_value = %s,
+                        section_key = %s,
+                        display_name = %s,
+                        min_value = %s,
+                        max_value = %s,
                         last_seen_at = NOW(3),
                         is_currently_out_of_range = 1,
                         returned_to_range_at = NULL
                     WHERE alert_id = %s
                     """,
-                    (alert_type, value, existing["alert_id"]),
+                    (
+                        alert_type,
+                        value,
+                        row.get("section_key"),
+                        display_name,
+                        min_value,
+                        max_value,
+                        existing["alert_id"],
+                    ),
                 )
                 updated += 1
             else:
@@ -149,14 +204,48 @@ def evaluate_alerts(machine_id: int) -> dict[str, Any]:
                 )
                 updated += 1
 
-    return {"evaluated": True, "recipe_id": recipe_id, "created": created, "updated": updated, "returned": returned}
+    retired_alert_ids = [
+        int(item["alert_id"])
+        for tag_id, item in existing_by_tag.items()
+        if tag_id not in active_limit_tag_ids
+        and int(item.get("is_currently_out_of_range") or 0) == 1
+    ]
+    if retired_alert_ids:
+        placeholders = ",".join(["%s"] * len(retired_alert_ids))
+        returned += pool.execute(
+            f"""
+            UPDATE opc_alert_events
+            SET is_currently_out_of_range = 0,
+                returned_to_range_at = COALESCE(returned_to_range_at, NOW(3)),
+                last_seen_at = NOW(3)
+            WHERE alert_id IN ({placeholders})
+            """,
+            tuple(retired_alert_ids),
+        )
+
+    return {
+        "evaluated": True,
+        "recipe_id": recipe_id,
+        "created": created,
+        "updated": updated,
+        "returned": returned,
+        "skipped_stale_or_bad": skipped_stale_or_bad,
+    }
 
 
-def list_alerts(machine_id: int, active_only: bool = True, limit: int = 200) -> list[dict[str, Any]]:
+def list_alerts(
+    machine_id: int,
+    active_only: bool = True,
+    limit: int = 200,
+    recipe_id: int | None = None,
+) -> list[dict[str, Any]]:
     where = "machine_id = %s"
     params: list[Any] = [machine_id]
     if active_only:
         where += " AND is_acknowledged = 0"
+    if recipe_id is not None:
+        where += " AND recipe_id = %s"
+        params.append(recipe_id)
     params.append(limit)
     rows = pool.fetch_all(
         f"""

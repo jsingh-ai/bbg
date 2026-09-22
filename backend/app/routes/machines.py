@@ -44,7 +44,7 @@ def sync(machine_id: int) -> dict:
 
 @router.get("/machines/{machine_id}/sections")
 def sections(machine_id: int, include_hidden: bool = True) -> list[dict]:
-    return get_sections(machine_id, include_hidden=include_hidden, sync=True)
+    return get_sections(machine_id, include_hidden=include_hidden, sync=False)
 
 
 @router.get("/photos")

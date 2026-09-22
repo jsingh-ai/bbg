@@ -49,6 +49,12 @@ class TimeRange:
     timezone: str
 
 
+class NumericSeries(list[dict[str, Any]]):
+    """A bounded history result that reports when rows were omitted."""
+
+    truncated: bool = False
+
+
 def _settings():
     return get_settings()
 
@@ -721,7 +727,7 @@ def _fetch_numeric_series(
     *,
     include_prior: bool = False,
     max_rows: int | None = None,
-) -> list[dict[str, Any]]:
+) -> NumericSeries:
     settings = _settings()
     rows: list[dict[str, Any]] = []
     if include_prior:
@@ -740,9 +746,8 @@ def _fetch_numeric_series(
         )
         if prior:
             rows.append(prior)
-    bounded_limit = max_rows or settings.assistant_max_rows
-    rows.extend(
-        pool.fetch_all(
+    bounded_limit = max(int(max_rows or settings.assistant_max_rows), 1)
+    fetched_rows = pool.fetch_all(
             """
             SELECT created_at, tag_id, value_num
             FROM opc_tag_values
@@ -754,10 +759,13 @@ def _fetch_numeric_series(
             ORDER BY created_at
             LIMIT %s
             """,
-            (tag_id, start, end, bounded_limit),
+            (tag_id, start, end, bounded_limit + 1),
         )
-    )
-    return rows
+    truncated = len(fetched_rows) > bounded_limit
+    rows.extend(fetched_rows[:bounded_limit])
+    result = NumericSeries(rows)
+    result.truncated = truncated
+    return result
 
 
 def get_production_summary(time_range: TimeRange, compare_to: TimeRange | None = None) -> dict[str, Any]:
@@ -784,6 +792,19 @@ def get_production_summary(time_range: TimeRange, compare_to: TimeRange | None =
     bad_tag = bad_resolution["tag"]
     good_rows = _fetch_numeric_series(int(good_tag["tag_id"]), time_range.start, time_range.end, max_rows=settings.assistant_max_rows)
     bad_rows = _fetch_numeric_series(int(bad_tag["tag_id"]), time_range.start, time_range.end, max_rows=settings.assistant_max_rows)
+    if good_rows.truncated or bad_rows.truncated:
+        return {
+            "range": _range_dict(time_range),
+            "error": {
+                "code": "analysis_row_limit_exceeded",
+                "message": "Production history exceeded the configured row limit, so no partial production total was reported.",
+                "max_rows_per_tag": settings.assistant_max_rows,
+            },
+            "good_bags": 0,
+            "bad_bags": 0,
+            "total_bags": 0,
+            "bad_rate_pct": 0.0,
+        }
     total_counter_bags = None
     total_counter_tag = None
     if total_resolution["found"] and total_resolution["tag"]:
@@ -793,7 +814,8 @@ def get_production_summary(time_range: TimeRange, compare_to: TimeRange | None =
             "opc_path": total_resolution["tag"].get("opc_path"),
         }
         total_rows = _fetch_numeric_series(int(total_resolution["tag"]["tag_id"]), time_range.start, time_range.end, max_rows=settings.assistant_max_rows)
-        total_counter_bags = round(_counter_delta(total_rows), 3)
+        if not total_rows.truncated:
+            total_counter_bags = round(_counter_delta(total_rows), 3)
 
     timestamps = [row.get("created_at") for row in [*good_rows, *bad_rows] if row.get("created_at") is not None]
     if not timestamps:
@@ -963,6 +985,20 @@ def get_stop_summary(time_range: TimeRange) -> dict[str, Any]:
         include_prior=True,
         max_rows=settings.assistant_max_rows,
     )
+    if rows.truncated:
+        return {
+            "range": _range_dict(time_range),
+            "error": {
+                "code": "analysis_row_limit_exceeded",
+                "message": "Speed history exceeded the configured row limit, so no partial downtime result was reported.",
+                "max_rows_per_tag": settings.assistant_max_rows,
+            },
+            "stop_count": 0,
+            "total_down_minutes": 0,
+            "longest_stop": None,
+            "average_stop_minutes": 0,
+            "stops": [],
+        }
     in_range_rows = [row for row in rows if row.get("created_at") and row["created_at"] >= time_range.start]
     if not in_range_rows:
         return {

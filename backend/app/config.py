@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     static_photo_dir: str = "opc_photos"
     live_refresh_seconds: int = 60
     default_history_minutes: int = 60
+    alert_evaluation_seconds: int = 60
+    alert_max_data_age_seconds: int = 300
     openai_api_key: str = ""
     openai_model: str = "gpt-4.1-mini"
     openai_timeout_seconds: float = 10
@@ -39,7 +41,7 @@ class Settings(BaseSettings):
     assistant_enabled: bool = False
     assistant_llm_send_raw: bool = False
     assistant_expose_raw_response: bool = False
-    assistant_max_rows: int = 5000
+    assistant_max_rows: int = 20000
     assistant_default_timezone: str = "America/Chicago"
     assistant_speed_tag_path: str = "Global PV/200 - format/state/machine speed"
     assistant_good_bags_tag_path: str = "Global PV/info/state/shift: good"

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import logging
 from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import Any
 
+from pymysql import err as pymysql_err
 from fastapi import HTTPException
 
 from ..config import get_settings
@@ -31,6 +33,7 @@ PRODUCTION_PATHS = {
 
 UPTIME_WINDOW_MINUTES = 24 * 60
 MAX_HISTORY_POINTS_PER_SERIES = 600
+logger = logging.getLogger(__name__)
 
 
 def _latest_history_by_tag(tag_ids: list[int]) -> dict[int, dict[str, Any]]:
@@ -148,6 +151,7 @@ def get_machine(machine_id: int) -> dict[str, Any]:
 def get_dashboard_summary(machine_id: int, minutes: int | None = None) -> dict[str, Any]:
     history_minutes = minutes or 60
     start = datetime.now() - timedelta(minutes=history_minutes)
+    warnings: list[str] = []
     required_paths = [SPEED_PATH]
     for mode_paths in PRODUCTION_PATHS.values():
         required_paths.extend(mode_paths.values())
@@ -188,22 +192,29 @@ def get_dashboard_summary(machine_id: int, minutes: int | None = None) -> dict[s
     if tag_ids:
         history_placeholders = ",".join(["%s"] * len(tag_ids))
         bucket_seconds = _history_bucket_seconds(start, datetime.now())
-        history_rows = pool.fetch_all(
-            f"""
-            SELECT
-                FROM_UNIXTIME(FLOOR(UNIX_TIMESTAMP(created_at) / %s) * %s) AS bucket_time,
-                tag_id,
-                AVG(value_num) AS value_num
-            FROM opc_tag_values
-            WHERE tag_id IN ({history_placeholders})
-              AND created_at >= %s
-              AND value_kind = 1
-              AND value_num IS NOT NULL
-            GROUP BY tag_id, bucket_time
-            ORDER BY bucket_time, tag_id
-            """,
-            tuple([bucket_seconds, bucket_seconds, *tag_ids, start]),
-        )
+        try:
+            history_rows = pool.fetch_all(
+                f"""
+                SELECT
+                    FROM_UNIXTIME(FLOOR(UNIX_TIMESTAMP(created_at) / %s) * %s) AS bucket_time,
+                    tag_id,
+                    AVG(value_num) AS value_num
+                FROM opc_tag_values
+                WHERE tag_id IN ({history_placeholders})
+                  AND created_at >= %s
+                  AND value_kind = 1
+                  AND value_num IS NOT NULL
+                GROUP BY tag_id, bucket_time
+                ORDER BY bucket_time, tag_id
+                """,
+                tuple([bucket_seconds, bucket_seconds, *tag_ids, start]),
+            )
+        except (pymysql_err.OperationalError, pymysql_err.InterfaceError) as exc:
+            logger.warning("Dashboard history query failed for machine %s: %s", machine_id, exc)
+            warnings.append(
+                "Recent history is temporarily unavailable because the MySQL query timed out. Live values are still shown."
+            )
+            history_rows = []
         for row in history_rows:
             captured = row.get("bucket_time")
             timestamp = captured.isoformat() if hasattr(captured, "isoformat") else str(captured)
@@ -234,21 +245,35 @@ def get_dashboard_summary(machine_id: int, minutes: int | None = None) -> dict[s
             }
 
         uptime_start = datetime.now() - timedelta(minutes=UPTIME_WINDOW_MINUTES)
-        uptime_rows = pool.fetch_all(
-            """
-            SELECT
-                DATE_FORMAT(created_at, '%%Y-%%m-%%d %%H:%%i') AS minute_key,
-                MAX(value_num) AS value_num
-            FROM opc_tag_values
-            WHERE tag_id = %s
-              AND created_at >= %s
-              AND value_kind = 1
-              AND value_num IS NOT NULL
-            GROUP BY DATE_FORMAT(created_at, '%%Y-%%m-%%d %%H:%%i')
-            ORDER BY minute_key
-            """,
-            (speed_tag_id, uptime_start),
-        )
+        try:
+            uptime_rows = pool.fetch_all(
+                """
+                SELECT
+                    DATE_FORMAT(created_at, '%%Y-%%m-%%d %%H:%%i') AS minute_key,
+                    MAX(value_num) AS value_num
+                FROM opc_tag_values
+                WHERE tag_id = %s
+                  AND created_at >= %s
+                  AND value_kind = 1
+                  AND value_num IS NOT NULL
+                GROUP BY DATE_FORMAT(created_at, '%%Y-%%m-%%d %%H:%%i')
+                ORDER BY minute_key
+                """,
+                (speed_tag_id, uptime_start),
+            )
+        except (pymysql_err.OperationalError, pymysql_err.InterfaceError) as exc:
+            logger.warning("Dashboard uptime query failed for machine %s: %s", machine_id, exc)
+            warnings.append(
+                "Uptime history is temporarily unavailable because the MySQL query timed out."
+            )
+            return {
+                "window_minutes": UPTIME_WINDOW_MINUTES,
+                "online_minutes": 0,
+                "offline_minutes": 0,
+                "down_minutes": 0,
+                "uptime_pct": 0.0,
+                "available": False,
+            }
 
         latest_by_minute: dict[str, float] = {}
         for row in uptime_rows:
@@ -269,6 +294,7 @@ def get_dashboard_summary(machine_id: int, minutes: int | None = None) -> dict[s
             "offline_minutes": offline_minutes,
             "down_minutes": down_minutes,
             "uptime_pct": uptime_pct,
+            "available": True,
         }
 
     return {
@@ -281,6 +307,7 @@ def get_dashboard_summary(machine_id: int, minutes: int | None = None) -> dict[s
             for mode in ("shift", "job", "total")
         },
         "uptime": uptime_for_speed(),
+        "warnings": warnings,
     }
 
 
@@ -394,16 +421,19 @@ def get_sections(
         )
         limits_by_section = {str(row["section_key"]): int(row["limit_count"] or 0) for row in limit_rows}
 
+    alert_recipe_filter = "AND recipe_id = %s" if recipe_id else "AND recipe_id IS NULL"
+    alert_params: tuple[Any, ...] = (machine_id, recipe_id) if recipe_id else (machine_id,)
     alert_rows = pool.fetch_all(
-        """
+        f"""
         SELECT section_key,
                SUM(CASE WHEN is_currently_out_of_range = 1 THEN 1 ELSE 0 END) AS current_alert_count,
                COUNT(*) AS open_alert_count
         FROM opc_alert_events
         WHERE machine_id = %s AND is_acknowledged = 0
+          {alert_recipe_filter}
         GROUP BY section_key
         """,
-        (machine_id,),
+        alert_params,
     )
     alerts_by_section = {
         str(row["section_key"]): {
@@ -527,9 +557,6 @@ def get_section_live_values(machine_id: int, section_key: str, include_hidden: b
         )
 
     rows = fetch_rows()
-    if not rows:
-        sync_machine(machine_id)
-        rows = fetch_rows()
 
     fallback_tag_ids = [
         int(row["tag_id"])
@@ -591,6 +618,8 @@ def get_history(machine_id: int, section_key: str | None, start: datetime, end: 
         return {"series": []}
     if end <= start:
         raise HTTPException(status_code=400, detail="End time must be after start time")
+    if end - start > timedelta(days=31):
+        raise HTTPException(status_code=400, detail="History range must be 31 days or less")
     if len(tag_ids) > 25:
         raise HTTPException(status_code=400, detail="Select 25 or fewer tags for one chart")
     tag_ids = _filter_numeric_tag_ids(machine_id, tag_ids)

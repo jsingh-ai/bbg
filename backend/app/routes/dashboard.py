@@ -25,11 +25,12 @@ router = APIRouter(prefix="/api", tags=["dashboard"])
 @router.get("/machines/{machine_id}/dashboard")
 def dashboard_state(machine_id: int) -> dict:
     active_recipe = get_active_recipe(machine_id)
+    active_recipe_id = active_recipe.get("recipe_id") if active_recipe else None
     return {
         "machine": get_machine(machine_id),
         "active_recipe": active_recipe,
-        "sections": get_sections(machine_id, include_hidden=True, sync=True, active_recipe=active_recipe),
-        "alerts": list_alerts(machine_id, active_only=True),
+        "sections": get_sections(machine_id, include_hidden=True, sync=False, active_recipe=active_recipe),
+        "alerts": list_alerts(machine_id, active_only=True, recipe_id=active_recipe_id) if active_recipe_id else [],
     }
 
 

@@ -136,6 +136,7 @@ export interface SummaryUptime {
   offline_minutes: number;
   down_minutes: number;
   uptime_pct: number;
+  available?: boolean;
 }
 
 export interface DashboardSummary {
@@ -146,6 +147,7 @@ export interface DashboardSummary {
     total: { good: SummaryMetric; bad: SummaryMetric };
   };
   uptime: SummaryUptime;
+  warnings?: string[];
 }
 
 export interface HistorySeries {
