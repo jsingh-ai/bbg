@@ -239,23 +239,25 @@ def list_alerts(
     limit: int = 200,
     recipe_id: int | None = None,
 ) -> list[dict[str, Any]]:
-    where = "machine_id = %s"
+    where = "a.machine_id = %s"
     params: list[Any] = [machine_id]
     if active_only:
-        where += " AND is_acknowledged = 0"
+        where += " AND a.is_acknowledged = 0"
     if recipe_id is not None:
-        where += " AND recipe_id = %s"
+        where += " AND a.recipe_id = %s"
         params.append(recipe_id)
     params.append(limit)
     rows = pool.fetch_all(
         f"""
-        SELECT alert_id, machine_id, recipe_id, tag_id, section_key, display_name, alert_type,
-               min_value, max_value, trigger_value, current_value, triggered_at, last_seen_at,
-               returned_to_range_at, is_currently_out_of_range, is_acknowledged,
-               acknowledged_at, acknowledged_by, acknowledge_note, created_at, updated_at
-        FROM opc_alert_events
+        SELECT a.alert_id, a.machine_id, a.recipe_id, a.tag_id, a.section_key, a.display_name, t.node_id,
+               a.alert_type, a.min_value, a.max_value, a.trigger_value, a.current_value,
+               a.triggered_at, a.last_seen_at, a.returned_to_range_at,
+               a.is_currently_out_of_range, a.is_acknowledged, a.acknowledged_at,
+               a.acknowledged_by, a.acknowledge_note, a.created_at, a.updated_at
+        FROM opc_alert_events a
+        LEFT JOIN opc_tags t ON t.tag_id = a.tag_id AND t.machine_id = a.machine_id
         WHERE {where}
-        ORDER BY is_acknowledged ASC, triggered_at DESC
+        ORDER BY a.is_acknowledged ASC, a.triggered_at DESC
         LIMIT %s
         """,
         tuple(params),

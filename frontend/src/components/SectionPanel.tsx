@@ -94,6 +94,7 @@ function ValueRows({
           <tr>
             <th className="action-col" aria-label="Show toggle column"></th>
             <th>Display Name</th>
+            <th>Node ID</th>
             <th>Current Value</th>
             <th className="action-col">Save</th>
           </tr>
@@ -107,6 +108,7 @@ function ValueRows({
                 </button>
               </td>
               <td>{row.label}</td>
+              <td className="node-id-cell"><code title={row.node_id}>{row.node_id || '--'}</code></td>
               <td className="current-value-cell"><span className="current-value-pill">{row.current_value}</span></td>
               <td className="action-col">
                 {Boolean(row.is_history_numeric ?? row.is_numeric) ? (
@@ -132,7 +134,7 @@ function ValueRows({
           ))}
           {!values.length && (
             <tr>
-              <td colSpan={4} className="muted-cell">No variables in this group.</td>
+              <td colSpan={5} className="muted-cell">No variables in this group.</td>
             </tr>
           )}
         </tbody>

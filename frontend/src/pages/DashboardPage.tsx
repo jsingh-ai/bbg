@@ -7,7 +7,6 @@ import AssistantPanel from '../components/AssistantPanel';
 import DashboardSummary from '../components/DashboardSummary';
 import HistoryChart, {
   MAX_SAVED_COMPARISON_TRENDS,
-  MAX_SECTION_HISTORY_TRENDS,
   SavedVariablesChart
 } from '../components/HistoryChart';
 import MachineMap from '../components/MachineMap';
@@ -88,6 +87,7 @@ function DashboardPage({ machineId, refreshSeconds, assistantEnabled, theme }: D
         {
           tag_id: value.tag_id,
           label: value.label,
+          node_id: value.node_id,
           section_key: value.section_key,
           current_value: value.current_value
         }
@@ -111,6 +111,7 @@ function DashboardPage({ machineId, refreshSeconds, assistantEnabled, theme }: D
         {
           tag_id: speedTagId,
           label: speed.label || 'Machine Speed',
+          node_id: speed.node_id || '--',
           section_key: 'Machine',
           current_value: speed.current_value
         }
@@ -130,7 +131,6 @@ function DashboardPage({ machineId, refreshSeconds, assistantEnabled, theme }: D
   const machine = state?.machine;
   const sections = state?.sections ?? [];
   const alerts = state?.alerts ?? [];
-  const shouldShowSectionHistory = numericValues.length <= MAX_SECTION_HISTORY_TRENDS;
 
   return (
     <div className="page dashboard-page">
@@ -170,7 +170,7 @@ function DashboardPage({ machineId, refreshSeconds, assistantEnabled, theme }: D
           />
         </div>
         {selectedSectionKey && (
-          <div className="dashboard-live-history-row">
+          <div className="dashboard-selected-section-row">
             <SectionPanel
               machineId={machineId}
               sectionKey={selectedSectionKey}
@@ -180,15 +180,17 @@ function DashboardPage({ machineId, refreshSeconds, assistantEnabled, theme }: D
               savedVariableIds={savedVariables.map((item) => item.tag_id)}
               savedVariableLimitReached={savedVariables.length >= MAX_SAVED_COMPARISON_TRENDS}
             />
-            {shouldShowSectionHistory && (
-              <HistoryChart
-                machineId={machineId}
-                sectionKey={selectedSectionKey}
-                numericValues={numericValues}
-                refreshMs={refreshMs}
-                theme={theme}
-              />
-            )}
+          </div>
+        )}
+        {selectedSectionKey && (
+          <div className="dashboard-section-history-row">
+            <HistoryChart
+              machineId={machineId}
+              sectionKey={selectedSectionKey}
+              numericValues={numericValues}
+              refreshMs={refreshMs}
+              theme={theme}
+            />
           </div>
         )}
         {savedVariables.length > 0 && (

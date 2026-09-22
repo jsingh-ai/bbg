@@ -99,6 +99,7 @@ export interface AlertEvent {
   tag_id: number;
   section_key: string;
   display_name?: string | null;
+  node_id?: string | null;
   alert_type: 'LOW' | 'HIGH' | 'LIMIT';
   min_value?: number | null;
   max_value?: number | null;
@@ -124,6 +125,7 @@ export interface DashboardState {
 export interface SummaryMetric {
   tag_id?: number;
   opc_path: string;
+  node_id?: string;
   label: string;
   current_value: string;
   value_num?: number | null;
@@ -153,6 +155,7 @@ export interface DashboardSummary {
 export interface HistorySeries {
   tag_id: number;
   label: string;
+  node_id?: string;
   section_key?: string;
   points: [string, number][];
 }
@@ -374,6 +377,7 @@ export interface AssistantProductionCandidatesResponse {
 export interface SavedHistoryVariable {
   tag_id: number;
   label: string;
+  node_id: string;
   section_key: string;
   current_value: string;
 }

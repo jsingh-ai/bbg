@@ -35,6 +35,7 @@ function AlertHistoryPage({ machineId }: AlertHistoryPageProps) {
                 <th>Status</th>
                 <th>Section</th>
                 <th>Variable</th>
+                <th>Node ID</th>
                 <th>Current</th>
                 <th>Min</th>
                 <th>Max</th>
@@ -55,6 +56,7 @@ function AlertHistoryPage({ machineId }: AlertHistoryPageProps) {
                   </td>
                   <td>{alert.section_key}</td>
                   <td>{alert.display_name ?? `Tag ${alert.tag_id}`}</td>
+                  <td className="node-id-cell"><code title={alert.node_id ?? ''}>{alert.node_id || '--'}</code></td>
                   <td>{fmt(alert.current_value)}</td>
                   <td>{fmt(alert.min_value)}</td>
                   <td>{fmt(alert.max_value)}</td>
@@ -67,7 +69,7 @@ function AlertHistoryPage({ machineId }: AlertHistoryPageProps) {
                   </td>
                 </tr>
               ))}
-              {!alertsQuery.data?.length && <tr><td colSpan={9} className="muted-cell">No alerts found.</td></tr>}
+              {!alertsQuery.data?.length && <tr><td colSpan={10} className="muted-cell">No alerts found.</td></tr>}
             </tbody>
           </table>
         </div>

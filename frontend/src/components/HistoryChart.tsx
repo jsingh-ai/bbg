@@ -257,6 +257,11 @@ function HistoryChart({ machineId, sectionKey, numericValues, refreshMs, theme }
           <div className="chart-stage">
             {mainHistoryQuery.isError && <div className="chart-message">{(mainHistoryQuery.error as Error).message}</div>}
             {!tagIds.length && <div className="chart-message">Show one or more numeric live variables to chart them here.</div>}
+            {exceedsTrendLimit && (
+              <div className="chart-message">
+                This section has {tagIds.length} numeric variables. Hide variables until 15 or fewer are shown to load historical trends.
+              </div>
+            )}
             {!mainHistoryQuery.isError && tagIds.length > 0 && mainHistoryQuery.data && !hasMainSeriesData && (
               <div className="chart-message">No history data found for the shown variables and time range.</div>
             )}
@@ -382,6 +387,7 @@ export function SavedVariablesChart({
                     <th className="action-col" aria-label="Remove saved variable column"></th>
                     <th>Section</th>
                     <th>Variable</th>
+                    <th>Node ID</th>
                     <th>Current Value</th>
                   </tr>
                 </thead>
@@ -395,6 +401,7 @@ export function SavedVariablesChart({
                       </td>
                       <td>{item.section_key}</td>
                       <td>{item.label}</td>
+                      <td className="node-id-cell"><code title={item.node_id}>{item.node_id || '--'}</code></td>
                       <td className="current-value-cell"><span className="current-value-pill">{item.current_value}</span></td>
                     </tr>
                   ))}

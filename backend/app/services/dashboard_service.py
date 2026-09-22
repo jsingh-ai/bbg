@@ -81,6 +81,40 @@ def _history_bucket_seconds(start: datetime, end: datetime, max_points: int = MA
     return max(1, (range_seconds + max_points - 1) // max_points)
 
 
+def _numeric_history_rows(
+    tag_ids: list[int],
+    start: datetime,
+    end: datetime,
+    bucket_seconds: int,
+) -> list[dict[str, Any]]:
+    """Fetch bounded numeric history using the covering tag/value/time index.
+
+    Tag ownership and section membership are validated by the caller before this
+    query runs. Keeping the large history scan on opc_tag_values alone prevents
+    MySQL from choosing an expensive join order as the collector table grows.
+    """
+    if not tag_ids:
+        return []
+    placeholders = ",".join(["%s"] * len(tag_ids))
+    return pool.fetch_all(
+        f"""
+        SELECT
+            v.tag_id,
+            FROM_UNIXTIME(FLOOR(UNIX_TIMESTAMP(v.created_at) / %s) * %s) AS bucket_time,
+            AVG(v.value_num) AS value_num
+        FROM opc_tag_values v
+        WHERE v.tag_id IN ({placeholders})
+          AND v.value_kind = 1
+          AND v.created_at >= %s
+          AND v.created_at <= %s
+          AND v.value_num IS NOT NULL
+        GROUP BY v.tag_id, bucket_time
+        ORDER BY v.tag_id, bucket_time
+        """,
+        tuple([bucket_seconds, bucket_seconds, *tag_ids, start, end]),
+    )
+
+
 def _is_timeout_marker(value: Any) -> bool:
     text = str(value or "").strip().lower()
     return "timeout" in text
@@ -150,7 +184,8 @@ def get_machine(machine_id: int) -> dict[str, Any]:
 
 def get_dashboard_summary(machine_id: int, minutes: int | None = None) -> dict[str, Any]:
     history_minutes = minutes or 60
-    start = datetime.now() - timedelta(minutes=history_minutes)
+    end = datetime.now()
+    start = end - timedelta(minutes=history_minutes)
     warnings: list[str] = []
     required_paths = [SPEED_PATH]
     for mode_paths in PRODUCTION_PATHS.values():
@@ -190,25 +225,9 @@ def get_dashboard_summary(machine_id: int, minutes: int | None = None) -> dict[s
     latest_history = _latest_history_by_tag(fallback_tag_ids)
 
     if tag_ids:
-        history_placeholders = ",".join(["%s"] * len(tag_ids))
-        bucket_seconds = _history_bucket_seconds(start, datetime.now())
+        bucket_seconds = _history_bucket_seconds(start, end)
         try:
-            history_rows = pool.fetch_all(
-                f"""
-                SELECT
-                    FROM_UNIXTIME(FLOOR(UNIX_TIMESTAMP(created_at) / %s) * %s) AS bucket_time,
-                    tag_id,
-                    AVG(value_num) AS value_num
-                FROM opc_tag_values
-                WHERE tag_id IN ({history_placeholders})
-                  AND created_at >= %s
-                  AND value_kind = 1
-                  AND value_num IS NOT NULL
-                GROUP BY tag_id, bucket_time
-                ORDER BY bucket_time, tag_id
-                """,
-                tuple([bucket_seconds, bucket_seconds, *tag_ids, start]),
-            )
+            history_rows = _numeric_history_rows(tag_ids, start, end, bucket_seconds)
         except (pymysql_err.OperationalError, pymysql_err.InterfaceError) as exc:
             logger.warning("Dashboard history query failed for machine %s: %s", machine_id, exc)
             warnings.append(
@@ -634,11 +653,6 @@ def get_history(machine_id: int, section_key: str | None, start: datetime, end: 
         params.append(section_key)
     metadata_params = [*params, *tag_ids]
     bucket_seconds = _history_bucket_seconds(start, end)
-    history_params: list[Any] = [bucket_seconds, bucket_seconds, machine_id]
-    if section_key:
-        history_params.append(section_key)
-    history_params.extend([start, end, *tag_ids])
-
     metadata_rows = pool.fetch_all(
         f"""
         SELECT
@@ -661,31 +675,21 @@ def get_history(machine_id: int, section_key: str | None, start: datetime, end: 
         for row in metadata_rows
         if row.get("tag_id") is not None
     }
+    node_ids = {
+        int(row["tag_id"]): str(row.get("node_id") or "")
+        for row in metadata_rows
+        if row.get("tag_id") is not None
+    }
+    tag_ids = [tag_id for tag_id in tag_ids if tag_id in labels]
+    if not tag_ids:
+        return {
+            "series": [],
+            "start": start.isoformat(),
+            "end": end.isoformat(),
+            "bucket_seconds": bucket_seconds,
+        }
 
-    def fetch_rows() -> list[dict[str, Any]]:
-        return pool.fetch_all(
-            f"""
-            SELECT
-                v.tag_id,
-                FROM_UNIXTIME(FLOOR(UNIX_TIMESTAMP(v.created_at) / %s) * %s) AS bucket_time,
-                AVG(v.value_num) AS value_num
-            FROM opc_tag_values v
-            JOIN opc_tags t ON t.tag_id = v.tag_id
-            JOIN opc_tag_display_config cfg ON cfg.tag_id = t.tag_id AND cfg.machine_id = t.machine_id
-            WHERE t.machine_id = %s
-              {section_filter}
-              AND v.created_at >= %s
-              AND v.created_at <= %s
-              AND v.tag_id IN ({placeholders})
-              AND v.value_kind = 1
-              AND v.value_num IS NOT NULL
-            GROUP BY v.tag_id, bucket_time
-            ORDER BY bucket_time, v.tag_id
-            """,
-            tuple(history_params),
-        )
-
-    rows = fetch_rows()
+    rows = _numeric_history_rows(tag_ids, start, end, bucket_seconds)
 
     points_by_tag: dict[int, list[list[Any]]] = defaultdict(list)
     for row in rows:
@@ -698,6 +702,7 @@ def get_history(machine_id: int, section_key: str | None, start: datetime, end: 
         {
             "tag_id": tag_id,
             "label": labels.get(tag_id, str(tag_id)),
+            "node_id": node_ids.get(tag_id, ""),
             "section_key": sections.get(tag_id, ""),
             "points": points_by_tag.get(tag_id, []),
         }

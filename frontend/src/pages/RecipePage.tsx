@@ -120,6 +120,7 @@ function RecipePage({ machineId }: RecipePageProps) {
           <thead>
             <tr>
               <th>Display Name</th>
+              <th>Node ID</th>
               <th>Current</th>
               <th>Min</th>
               <th>Max</th>
@@ -138,6 +139,7 @@ function RecipePage({ machineId }: RecipePageProps) {
               return (
                 <tr key={row.tag_id}>
                   <td>{row.label}</td>
+                  <td className="node-id-cell"><code title={row.node_id}>{row.node_id || '--'}</code></td>
                   <td className="current-value-cell"><span className="current-value-pill">{row.current_value}</span></td>
                   <td><input value={draft.min_value} onChange={(event) => updateDraft(row, { min_value: event.target.value })} /></td>
                   <td><input value={draft.max_value} onChange={(event) => updateDraft(row, { max_value: event.target.value })} /></td>
@@ -147,7 +149,7 @@ function RecipePage({ machineId }: RecipePageProps) {
               );
             })}
             {!data.length && (
-              <tr><td colSpan={6} className="muted-cell">No variables in this group.</td></tr>
+              <tr><td colSpan={7} className="muted-cell">No variables in this group.</td></tr>
             )}
           </tbody>
         </table>

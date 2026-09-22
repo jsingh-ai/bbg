@@ -9,6 +9,17 @@ from app.services import alert_service
 
 
 class AlertServiceTests(unittest.TestCase):
+    def test_alert_listing_includes_node_id(self) -> None:
+        rows = [{"alert_id": 1, "tag_id": 12, "node_id": "ns=6;s=pressure"}]
+
+        with patch.object(alert_service.pool, "fetch_all", return_value=rows) as fetch_all:
+            result = alert_service.list_alerts(1, active_only=False)
+
+        self.assertEqual(result[0]["node_id"], "ns=6;s=pressure")
+        sql = " ".join(fetch_all.call_args.args[0].split())
+        self.assertIn("LEFT JOIN opc_tags t", sql)
+        self.assertIn("t.node_id", sql)
+
     def test_stale_latest_value_does_not_create_alert(self) -> None:
         limit_row = {
             "recipe_id": 7,
