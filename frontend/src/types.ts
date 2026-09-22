@@ -22,6 +22,9 @@ export interface Section {
   machine_id: number;
   section_key: string;
   display_label: string;
+  sequence_number?: string | null;
+  process_stage?: string | null;
+  process_description?: string | null;
   section_photo_path?: string | null;
   section_photo_url?: string | null;
   is_visible: number | boolean;

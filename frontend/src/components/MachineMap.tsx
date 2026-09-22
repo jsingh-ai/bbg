@@ -50,7 +50,11 @@ function MachineMap({ machine, sections, selectedSectionKey, onSelect }: Machine
                   width: `${section.box_w_pct ?? 0}%`,
                   height: `${section.box_h_pct ?? 0}%`
                 }}
-                title={section.display_label}
+                title={
+                  section.process_description
+                    ? `${section.display_label}\n${section.process_description}`
+                    : section.display_label
+                }
                 onClick={() => onSelect(section.section_key)}
               >
                 <span>{section.display_label}</span>

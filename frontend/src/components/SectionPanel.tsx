@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo } from 'react';
-import { Eye, EyeOff, Plus } from 'lucide-react';
+import { BookOpen, Eye, EyeOff, Plus } from 'lucide-react';
 import { api } from '../api/client';
 import type { LiveValue } from '../types';
 
@@ -275,6 +275,19 @@ function SectionPanel({
           <p className="panel-subtitle">Live values refresh automatically every minute.</p>
         </div>
       </div>
+
+      {liveQuery.data?.section.process_description && (
+        <div className="section-knowledge-card">
+          <div className="section-knowledge-heading">
+            <BookOpen size={18} aria-hidden="true" />
+            <div>
+              <span>What this section does</span>
+              <strong>{liveQuery.data.section.process_stage ?? 'Machine process'}</strong>
+            </div>
+          </div>
+          <p>{liveQuery.data.section.process_description}</p>
+        </div>
+      )}
 
       <div className="panel-body section-panel-body">
         <div className="section-content-row">

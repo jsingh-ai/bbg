@@ -11,6 +11,7 @@ from fastapi import HTTPException
 from ..config import get_settings
 from ..db import pool
 from .photo_service import safe_photo_url, static_url
+from .section_knowledge import get_section_knowledge
 from .section_parser import display_name, is_numeric_data_type, normalize_key
 from .sync_service import sync_machine
 from .value_format import formatted_value, row_json_safe, rows_json_safe
@@ -477,6 +478,7 @@ def get_sections(
             status = "neutral"
 
         item = row_json_safe(row)
+        item.update(get_section_knowledge(section_key))
         item["section_photo_url"] = safe_photo_url(row.get("section_photo_path"), section_key)
         item["has_box"] = all(row.get(k) is not None for k in ("box_x_pct", "box_y_pct", "box_w_pct", "box_h_pct"))
         item["limit_count"] = limit_count
@@ -534,6 +536,7 @@ def update_section(section_id: int, data: dict[str, Any]) -> dict[str, Any]:
     if not row:
         raise HTTPException(status_code=404, detail="Section not found")
     item = row_json_safe(row)
+    item.update(get_section_knowledge(row.get("section_key")))
     item["section_photo_url"] = safe_photo_url(row.get("section_photo_path"), row.get("section_key"))
     item["changed"] = changed
     return item
@@ -604,6 +607,7 @@ def get_section_live_values(machine_id: int, section_key: str, include_hidden: b
         (machine_id, section_key),
     )
     section_info = row_json_safe(section) if section else {"section_key": section_key, "display_label": section_key}
+    section_info.update(get_section_knowledge(section_key))
     section_info["section_photo_url"] = safe_photo_url(section_info.get("section_photo_path"), section_key)
     return {"section": section_info, "values": items}
 
